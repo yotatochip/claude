@@ -11,8 +11,10 @@ export class Field {
 
     const detail = grassDetailTextures();
     this.map = fieldTexture(homeTeam);
-    const mat = new THREE.MeshStandardMaterial({
-      map: this.map, roughness: 0.92, metalness: 0,
+    // Grass and field paint are matte: keep specular low so the far end zone
+    // doesn't pick up a glossy, hazy sheen from the stadium lights.
+    const mat = new THREE.MeshPhysicalMaterial({
+      map: this.map, roughness: 0.96, metalness: 0, specularIntensity: 0.08,
       normalMap: detail.normal, normalScale: new THREE.Vector2(0.55, 0.55),
     });
     // Tile the normal map independently of the painted map.
@@ -36,7 +38,7 @@ export class Field {
     this.group.add(this.surface);
 
     // Surround: running track-coloured apron out to the stands.
-    const apronMat = new THREE.MeshStandardMaterial({ color: '#2f5a24', roughness: 0.95 });
+    const apronMat = new THREE.MeshPhysicalMaterial({ color: '#2f5a24', roughness: 0.97, specularIntensity: 0.08 });
     const apron = new THREE.Mesh(new THREE.PlaneGeometry(220, 160), apronMat);
     apron.rotation.x = -Math.PI / 2;
     apron.position.y = -0.02;

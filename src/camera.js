@@ -38,6 +38,16 @@ export class CameraDirector {
       desiredLook.set(p.x - 0.25, 1.35, p.z - 0.6);
       fov = 36;
       posRate = 2; lookRate = 3;
+    } else if (mode === 'broadcast' && ctx.air) {
+      // Pass in the air: ride behind the ball, tilt up with its arc and keep the
+      // receiver's landing spot in frame.
+      const f = ctx.focus, vd = ctx.viewDir, y = ctx.ballY || 0;
+      const tgt = ctx.target || f;
+      desiredPos.set(f.x - vd * 12.5, 5.2 + y * 0.45, f.z * 0.6);
+      desiredLook.set(f.x + (tgt.x - f.x) * 0.45 + vd * 3, 0.6 + y * 0.6, f.z + (tgt.z - f.z) * 0.45);
+      desiredPos.x = clamp(desiredPos.x, -70, 70);
+      posRate = 5.5; lookRate = 9;
+      fov = 54;
     } else if (mode === 'broadcast') {
       const f = ctx.focus;
       const vd = ctx.viewDir;

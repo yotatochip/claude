@@ -161,8 +161,8 @@ export class Graphics {
       this.hemi.groundColor.set('#1a2414');
       this.hemi.intensity = 0.35;
       this.renderer.toneMappingExposure = 1.05;
-      this.bloom.strength = 0.6;
-      this.bloom.threshold = 0.85;
+      this.bloom.strength = 0.45;
+      this.bloom.threshold = 0.96;
       this.scene.fog = new THREE.Fog('#0a0f1a', 250, 1600);
       this.scene.environment = this.envFromScene(this.nightEnvScene());
       this.scene.environmentIntensity = 0.55;
@@ -189,7 +189,7 @@ export class Graphics {
       this.hemi.intensity = dusk ? 0.6 : 0.7;
       this.renderer.toneMappingExposure = dusk ? 0.72 : 0.58;
       this.bloom.strength = dusk ? 0.45 : 0.22;
-      this.bloom.threshold = dusk ? 0.88 : 0.95;
+      this.bloom.threshold = dusk ? 0.95 : 0.97;
       this.scene.fog = new THREE.Fog(dusk ? '#a78f86' : '#9fb4cc', 500, 2600);
       const envScene = new THREE.Scene();
       const skyCopy = new Sky();

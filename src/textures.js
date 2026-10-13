@@ -135,24 +135,11 @@ export function fieldTexture(home) {
     ctx.fillRect(X(x0), Z(-HW), 5 * ppy + 1, HW * 2 * ppy);
   }
 
-  // End zones painted in the home colors with a diagonal pinstripe.
+  // End zones: solid, matte home-color paint.
   for (const s of [-1, 1]) {
     const x0 = s < 0 ? -60 : 50;
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(X(x0), Z(-HW), 10 * ppy, HW * 2 * ppy);
-    ctx.clip();
-    ctx.fillStyle = home.primary;
+    ctx.fillStyle = shade(home.primary, -0.08);
     ctx.fillRect(X(x0), Z(-HW), 10 * ppy, HW * 2 * ppy);
-    ctx.strokeStyle = shade(home.primary, -0.18);
-    ctx.lineWidth = 0.9 * ppy;
-    for (let d = -80; d < 80; d += 2.6) {
-      ctx.beginPath();
-      ctx.moveTo(X(x0 + d), Z(-HW));
-      ctx.lineTo(X(x0 + d + 54), Z(HW));
-      ctx.stroke();
-    }
-    ctx.restore();
     // End zone lettering reads along the end line.
     const word = s < 0 ? home.school.toUpperCase() : home.name.toUpperCase();
     ctx.save();

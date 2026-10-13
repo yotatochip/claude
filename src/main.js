@@ -174,11 +174,16 @@ function cameraContext() {
   const viewDir = userOff ? dir : -dir;
   let focus = { x: g.ballX, z: g.ballZ };
   const live = g.state === 'live' || g.state === 'post';
-  let air = false;
-  if (live && s.ballState === 'air') { focus = { x: ball.x, z: ball.z }; air = true; }
+  let air = false, ballY = 0, target = null;
+  if (live && s.ballState === 'air') {
+    focus = { x: ball.x, z: ball.z };
+    air = true;
+    ballY = ball.y;
+    target = s.pass?.target || null;
+  }
   else if (live && s.carrier) focus = { x: s.carrier.p.x, z: s.carrier.p.z };
   else if (g.state === 'presnap' || g.state === 'playcall') focus = { x: g.ballX + g.dir * (userOff ? 0 : 1.5), z: g.ballZ };
-  return { mode: 'broadcast', focus, viewDir, live: live && s.phase === 'live', air };
+  return { mode: 'broadcast', focus, viewDir, live: live && s.phase === 'live', air, ballY, target };
 }
 
 function project(x, y, z) {
@@ -219,7 +224,7 @@ function frame(now) {
     world.stadium.update(dt);
     audio.update(world.stadium.excite);
   }
-  if (g && !app.paused) app.ball.update(0);
+  if (!app.paused) app.ball.updateEffects(dt, gfx.camera);
   const cctx = cameraContext();
   cam.update(dt, cctx);
   const f = cctx.focus || cctx.ball || { x: 0, z: 0 };
