@@ -16,6 +16,7 @@ import { blobShadowTexture } from './textures.js';
 
 const app = { game: null, paused: false, world: null };
 window.__gridiron = app; // handy for debugging from the console
+app.cameraContext = () => cameraContext();
 const tmp = new THREE.Vector3();
 
 async function loadFonts() {
@@ -183,7 +184,7 @@ function cameraContext() {
   }
   else if (live && s.carrier) focus = { x: s.carrier.p.x, z: s.carrier.p.z };
   else if (g.state === 'presnap' || g.state === 'playcall') focus = { x: g.ballX + g.dir * (userOff ? 0 : 1.5), z: g.ballZ };
-  return { mode: 'broadcast', focus, viewDir, live: live && s.phase === 'live', air, ballY, target };
+  return { mode: 'broadcast', focus, viewDir, live: live && s.phase === 'live', air, ballY, target, ballPos: air ? ball.clone() : null };
 }
 
 function project(x, y, z) {

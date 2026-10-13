@@ -43,11 +43,11 @@ export class CameraDirector {
       // receiver's landing spot in frame.
       const f = ctx.focus, vd = ctx.viewDir, y = ctx.ballY || 0;
       const tgt = ctx.target || f;
-      desiredPos.set(f.x - vd * 12.5, 5.2 + y * 0.45, f.z * 0.6);
-      desiredLook.set(f.x + (tgt.x - f.x) * 0.45 + vd * 3, 0.6 + y * 0.6, f.z + (tgt.z - f.z) * 0.45);
+      desiredPos.set(f.x - vd * 12.5, 4.8 + y * 0.55, f.z * 0.6);
+      desiredLook.set(f.x + (tgt.x - f.x) * 0.3 + vd * 2, 0.6 + y * 0.8, f.z + (tgt.z - f.z) * 0.3);
       desiredPos.x = clamp(desiredPos.x, -70, 70);
-      posRate = 5.5; lookRate = 9;
-      fov = 54;
+      posRate = 6.5; lookRate = 14;
+      fov = 56;
     } else if (mode === 'broadcast') {
       const f = ctx.focus;
       const vd = ctx.viewDir;
@@ -119,6 +119,22 @@ export class CameraDirector {
     this._v.copy(this.look);
     this._v.y += Math.sin(t * 0.83 + 0.4) * 0.05 * sway;
     this.camera.lookAt(this._v);
+    // Never lose a pass off the top or sides of the screen: if the ball drifts
+    // toward an edge, swing the aim point toward it right away.
+    if (ctx.air && ctx.ballPos) {
+      this.camera.updateMatrixWorld();
+      const p = this._p || (this._p = new THREE.Vector3());
+      p.copy(ctx.ballPos).project(this.camera);
+      const lim = 0.62;
+      const ex = Math.abs(p.x) > lim ? p.x - Math.sign(p.x) * lim : 0;
+      const ey = Math.abs(p.y) > lim ? p.y - Math.sign(p.y) * lim : 0;
+      if (ex || ey || p.z > 1) {
+        const k = p.z > 1 ? 1 : 0.9;
+        this.look.lerp(ctx.ballPos, Math.min(1, k * Math.max(Math.abs(ex), Math.abs(ey), p.z > 1 ? 1 : 0)));
+        this._v.copy(this.look);
+        this.camera.lookAt(this._v);
+      }
+    }
     if (Math.abs(this.camera.fov - this.fov) > 0.01) {
       this.camera.fov = this.fov;
       this.camera.updateProjectionMatrix();

@@ -1288,16 +1288,26 @@ export class PlaySim {
     return m;
   }
 
+  // Flight time for a pass of length d, chosen from the arc's peak height so a
+  // touch pass floats (about 8 yards up on a deep ball) and a bullet stays flat.
+  flightTime(d, type) {
+    const y0 = 2.0, y1 = 1.35;
+    const apex = type === 'lob' ? clamp(3.2 + d * 0.13, 4, 8.5) : clamp(2.5 + d * 0.05, 2.6, 4.2);
+    const vy = Math.sqrt(2 * GRAVITY * (apex - y0));
+    const tApex = (vy + Math.sqrt(vy * vy + 2 * GRAVITY * (y0 - y1))) / GRAVITY;
+    const tMax = type === 'lob' ? d / 12 + 0.35 : d / 17 + 0.15;
+    return Math.max(0.35, Math.min(tApex, tMax));
+  }
+
   throwTo(r, type) {
     const qb = this.qb;
-    const speed = type === 'lob' ? 14.5 : 21;
     // Lead the receiver along his current path.
     let T = 0.6, tx = r.p.x, tz = r.p.z;
     for (let i = 0; i < 4; i++) {
       tx = r.p.x + r.v.x * T;
       tz = r.p.z + r.v.z * T;
       const d = Math.hypot(tx - qb.p.x, tz - qb.p.z);
-      T = Math.max(0.35, d / speed + (type === 'lob' ? 0.35 : 0.08));
+      T = this.flightTime(d, type);
     }
     if (r.job?.type === 'route' && r.job.settle && r.job.i >= r.job.pts.length - 1) {
       const last = r.job.pts[r.job.pts.length - 1];
@@ -1319,7 +1329,7 @@ export class PlaySim {
 
   throwAway(spot) {
     const qb = this.qb;
-    const T = Math.hypot(spot.x - qb.p.x, spot.z - qb.p.z) / 19;
+    const T = this.flightTime(Math.hypot(spot.x - qb.p.x, spot.z - qb.p.z), 'bullet');
     this.launchPass(spot, T, null, 'away');
     this.emit('throw', { to: null, type: 'away' });
   }
@@ -1360,9 +1370,11 @@ export class PlaySim {
       if (a.side === 'def' && d < dd) { dd = d; def = a; }
     }
     const reach = 1.5;
+    // Touch passes hang long enough for defenders to close and get a hand in.
+    const defReach = reach * (this.pass.type === 'lob' ? 1.1 : 0.9);
     const recIn = rec && rd < reach;
-    const defIn = def && dd < reach * 0.9;
-    const contest = defIn ? clamp(1 - dd / (reach * 0.9), 0, 1) : 0;
+    const defIn = def && dd < defReach;
+    const contest = defIn ? clamp(1 - dd / defReach, 0, 1) : 0;
     const outOfBounds = Math.abs(tgt.z) > HW - 0.1 || tgt.x * this.dir > FIELD.goal + 10;
     if (defIn && (!recIn || dd < rd - 0.2) && !outOfBounds) {
       const intP = (0.18 + def.r.cat * 0.32) * contest * (recIn ? 0.75 : 1.25);
