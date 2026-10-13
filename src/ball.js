@@ -77,7 +77,7 @@ export class Football {
     anchor.add(this.mesh);
     this.mesh.position.set(0, 0, 0);
     this.mesh.rotation.set(tuck ? 1.25 : 0.3, 0, 0);
-    this.mesh.scale.setScalar(1);
+    this.mesh.scale.setScalar(0.86); // life size in a player's hands
   }
 
   detachTo(scene) {

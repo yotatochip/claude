@@ -14,8 +14,8 @@ const GradeShader = {
     uTime: { value: 0 },
     uVignette: { value: 0.32 },
     uGrain: { value: 0.035 },
-    uSat: { value: 1.08 },
-    uContrast: { value: 1.05 },
+    uSat: { value: 1.02 },
+    uContrast: { value: 1.07 },
     uTint: { value: new THREE.Vector3(1, 1, 1) },
   },
   vertexShader: /* glsl */`
@@ -63,7 +63,8 @@ export class Graphics {
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    // Khronos PBR Neutral keeps team colors true, like a broadcast camera.
+    renderer.toneMapping = THREE.NeutralToneMapping;
     renderer.toneMappingExposure = 1.0;
     container.appendChild(renderer.domElement);
     this.renderer = renderer;
@@ -160,9 +161,10 @@ export class Graphics {
       this.hemi.color.set('#334466');
       this.hemi.groundColor.set('#1a2414');
       this.hemi.intensity = 0.35;
-      this.renderer.toneMappingExposure = 1.05;
-      this.bloom.strength = 0.45;
-      this.bloom.threshold = 0.96;
+      this.renderer.toneMappingExposure = 0.92;
+      this.bloom.strength = 0.32;
+      this.bloom.threshold = 0.98;
+      this.bloom.radius = 0.35;
       this.scene.fog = new THREE.Fog('#0a0f1a', 250, 1600);
       this.scene.environment = this.envFromScene(this.nightEnvScene());
       this.scene.environmentIntensity = 0.55;
@@ -187,7 +189,7 @@ export class Graphics {
       this.hemi.color.set(dusk ? '#9fa8d8' : '#bcd2ff');
       this.hemi.groundColor.set('#3b4a2a');
       this.hemi.intensity = dusk ? 0.6 : 0.7;
-      this.renderer.toneMappingExposure = dusk ? 0.72 : 0.58;
+      this.renderer.toneMappingExposure = dusk ? 0.68 : 0.56;
       this.bloom.strength = dusk ? 0.45 : 0.22;
       this.bloom.threshold = dusk ? 0.95 : 0.97;
       this.scene.fog = new THREE.Fog(dusk ? '#a78f86' : '#9fb4cc', 500, 2600);
@@ -210,8 +212,8 @@ export class Graphics {
     this.lightDir.copy(sunDir);
     if (stadium) {
       const night = mode !== 'day';
-      const sunLin = this.sun.color.clone().multiplyScalar(mode === 'night' ? 0.5 : mode === 'dusk' ? 0.55 : 0.78);
-      const amb = mode === 'night' ? new THREE.Color(0.1, 0.11, 0.15) : mode === 'dusk' ? new THREE.Color(0.2, 0.19, 0.24) : new THREE.Color(0.26, 0.29, 0.34);
+      const sunLin = this.sun.color.clone().multiplyScalar(mode === 'night' ? 0.74 : mode === 'dusk' ? 0.62 : 0.85);
+      const amb = mode === 'night' ? new THREE.Color(0.14, 0.15, 0.19) : mode === 'dusk' ? new THREE.Color(0.2, 0.19, 0.24) : new THREE.Color(0.26, 0.29, 0.34);
       const fogC = this.scene.fog.color.clone();
       stadium.setLighting({ night, sunDir, sunColor: sunLin, ambient: amb, fog: fogC });
     }

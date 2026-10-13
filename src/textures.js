@@ -112,6 +112,46 @@ export function grassDetailTextures() {
   return { color, normal };
 }
 
+// Perforated jersey mesh: a staggered grid of tiny holes. Tiles many times
+// across the torso.
+let fabricNormalCache = null;
+export function fabricNormalTexture() {
+  if (fabricNormalCache) return fabricNormalCache;
+  const size = 64;
+  const h = new Float32Array(size * size).fill(1);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const row = Math.floor(y / 8), ox = row % 2 ? 4 : 0;
+      const dx = ((x + ox) % 8) - 3.5, dy = (y % 8) - 3.5;
+      const d = Math.hypot(dx, dy);
+      if (d < 2.4) h[y * size + x] = 0.35 + d * 0.27;
+    }
+  }
+  const t = tex(normalFromHeight(h, size, 2.2), { srgb: false, repeat: true });
+  t.repeat.set(48, 22);
+  fabricNormalCache = t;
+  return t;
+}
+
+// Knit/spandex weave for pants, socks and sleeves.
+let knitNormalCache = null;
+export function knitNormalTexture() {
+  if (knitNormalCache) return knitNormalCache;
+  const size = 64;
+  const h = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const rib = Math.sin((x / size) * Math.PI * 2 * 16) * 0.5 + 0.5;
+      const loop = Math.sin(((y + (x % 8 < 4 ? 2 : 0)) / size) * Math.PI * 2 * 16) * 0.5 + 0.5;
+      h[y * size + x] = rib * 0.6 + loop * 0.4;
+    }
+  }
+  const t = tex(normalFromHeight(h, size, 1.2), { srgb: false, repeat: true });
+  t.repeat.set(10, 10);
+  knitNormalCache = t;
+  return t;
+}
+
 // The painted field: 130 x 64 yards (field + white border + team area).
 export const FIELD_TEX = { w: 130, h: 64, ppy: 32 };
 
@@ -131,7 +171,7 @@ export function fieldTexture(home) {
   // Mowing stripes, 5 yards wide, across the playing field and end zones.
   for (let i = -12; i < 12; i++) {
     const x0 = i * 5;
-    ctx.fillStyle = (i & 1) ? '#467f31' : '#3d742b';
+    ctx.fillStyle = (i & 1) ? '#40702f' : '#3b692c';
     ctx.fillRect(X(x0), Z(-HW), 5 * ppy + 1, HW * 2 * ppy);
   }
 
@@ -305,6 +345,32 @@ export function jerseyTexture(kit, number, lastName) {
   ctx.fillStyle = kit.stripe;
   ctx.fillRect(0, 0, W, H * 0.035);
 
+  // Baked shading: fabric falls into shadow at the sides and where it tucks in.
+  for (const u of [0, 0.5, 1]) {
+    const g = ctx.createLinearGradient(u * W - W * 0.16, 0, u * W + W * 0.16, 0);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(0.5, 'rgba(0,0,0,0.22)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(u * W - W * 0.16, 0, W * 0.32, H);
+  }
+  const tuck = ctx.createLinearGradient(0, H * 0.82, 0, H);
+  tuck.addColorStop(0, 'rgba(0,0,0,0)');
+  tuck.addColorStop(1, 'rgba(0,0,0,0.3)');
+  ctx.fillStyle = tuck;
+  ctx.fillRect(0, H * 0.82, W, H * 0.18);
+  // A few soft creases across the belly and back.
+  const rnd2 = mulberry32(number * 7 + 3);
+  for (let i = 0; i < 7; i++) {
+    const y = H * (0.6 + rnd2() * 0.3), x = rnd2() * W;
+    const g = ctx.createLinearGradient(0, y - 6, 0, y + 6);
+    g.addColorStop(0, 'rgba(255,255,255,0)');
+    g.addColorStop(0.5, 'rgba(0,0,0,0.12)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(x - 40, y - 6, 80, 12);
+  }
+
   const stretch = 0.62; // compensate for the torso being wider than tall in UV space
   const drawNum = (cx, cy, size) => {
     ctx.save();
@@ -415,22 +481,42 @@ export function faceTexture(tone) {
   ctx.fillRect(0, 0, W, H);
   // Sphere u=0.5 is the front of the head (same convention as the helmet).
   const cx = W * 0.5;
-  ctx.fillStyle = 'rgba(20,12,8,0.95)';
+  // Soft shading: darker toward the sides and under the brow, warmer cheeks.
+  const side = ctx.createLinearGradient(cx - 64, 0, cx + 64, 0);
+  side.addColorStop(0, 'rgba(0,0,0,0.35)');
+  side.addColorStop(0.3, 'rgba(0,0,0,0)');
+  side.addColorStop(0.7, 'rgba(0,0,0,0)');
+  side.addColorStop(1, 'rgba(0,0,0,0.35)');
+  ctx.fillStyle = side;
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(160,60,40,0.12)';
+  for (const s of [-1, 1]) { ctx.beginPath(); ctx.ellipse(cx + s * 17, H * 0.62, 9, 6, 0, 0, Math.PI * 2); ctx.fill(); }
+  // Brow ridge shadow and eye sockets.
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.fillRect(cx - 30, H * 0.4, 60, 7);
   for (const s of [-1, 1]) {
-    ctx.beginPath();
-    ctx.ellipse(cx + s * 13, H * 0.47, 5, 3.2, 0, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath(); ctx.ellipse(cx + s * 12, H * 0.48, 8, 5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#e8e2d8';
+    ctx.beginPath(); ctx.ellipse(cx + s * 12, H * 0.48, 4.2, 2.2, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#2a1a10';
+    ctx.beginPath(); ctx.arc(cx + s * 12, H * 0.48, 1.9, 0, Math.PI * 2); ctx.fill();
+    // Eye black.
+    ctx.fillStyle = 'rgba(12,12,12,0.92)';
+    ctx.beginPath(); ctx.ellipse(cx + s * 13, H * 0.565, 7.5, 2.4, s * 0.12, 0, Math.PI * 2); ctx.fill();
+    // Brows.
+    ctx.fillStyle = shade(tone, -0.6);
+    ctx.fillRect(cx + s * 12 - 6, H * 0.41, 12, 2);
   }
-  // Eye black.
-  ctx.fillStyle = 'rgba(10,10,10,0.9)';
-  for (const s of [-1, 1]) ctx.fillRect(cx + s * 13 - 8, H * 0.53, 16, 5);
-  // Brows, nose shadow, mouth.
+  // Nose and mouth.
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.fillRect(cx - 3.5, H * 0.5, 2.5, 12);
+  ctx.fillStyle = shade(tone, -0.25);
+  ctx.beginPath(); ctx.ellipse(cx, H * 0.6, 4.5, 2.6, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = shade(tone, -0.45);
-  for (const s of [-1, 1]) ctx.fillRect(cx + s * 13 - 7, H * 0.41, 14, 2.5);
-  ctx.fillStyle = shade(tone, -0.2);
-  ctx.fillRect(cx - 2.5, H * 0.5, 5, 12);
-  ctx.fillStyle = shade(tone, -0.4);
-  ctx.fillRect(cx - 7, H * 0.7, 14, 2.5);
+  ctx.fillRect(cx - 7, H * 0.69, 14, 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.fillRect(cx - 9, H * 0.72, 18, 3);
   return tex(c);
 }
 

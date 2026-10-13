@@ -29,7 +29,18 @@ export class Field {
         .replace('#include <map_fragment>', `#include <map_fragment>
           vec3 dA = texture2D(uDetail, vWorldXZ * 0.62).rgb * 2.0;
           vec3 dB = texture2D(uDetail, vWorldXZ * 0.083 + 0.37).rgb * 2.0;
-          diffuseColor.rgb *= mix(vec3(1.0), dA, 0.55) * mix(vec3(1.0), dB, 0.35);`);
+          diffuseColor.rgb *= mix(vec3(1.0), dA, 0.55) * mix(vec3(1.0), dB, 0.35);
+          // Mowing pattern: the grass is laid in alternating directions every five
+          // yards, so stripes show strongly looking down the field and fade from the side.
+          {
+            float stripe = mod(floor((vWorldXZ.x + 60.0) / 5.0), 2.0) * 2.0 - 1.0;
+            vec3 toCam = normalize(cameraPosition - vec3(vWorldXZ.x, 0.0, vWorldXZ.y));
+            float inField = step(abs(vWorldXZ.x), 50.0) * step(abs(vWorldXZ.y), 26.67);
+            diffuseColor.rgb *= 1.0 + stripe * toCam.x * 0.13 * inField;
+            // Fine cross-cut texture from the mower reels.
+            float reel = sin(vWorldXZ.y * 6.2832 * 1.2) * 0.5 + 0.5;
+            diffuseColor.rgb *= 1.0 - reel * 0.025 * inField;
+          }`);
     };
     const geo = new THREE.PlaneGeometry(FIELD_TEX.w, FIELD_TEX.h, 1, 1);
     geo.rotateX(-Math.PI / 2);

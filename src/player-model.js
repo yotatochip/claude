@@ -2,8 +2,10 @@
 // Units are yards. The model faces +z in its local space.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import {
   jerseyTexture, sleeveTexture, pantsTexture, helmetTexture, faceTexture, SKIN_TONES, kitFor,
+  fabricNormalTexture, knitNormalTexture,
 } from './textures.js';
 import { damp } from './util.js';
 
@@ -12,56 +14,122 @@ const UPPER = 0.33, FORE = 0.3;
 const HIP_Y = THIGH + SHIN + ANKLE;
 
 // ---------------------------------------------------------------- geometry
+// A limb turned on a lathe from a (radius, y) profile listed bottom to top, so
+// thighs, calves, biceps and forearms have real muscle shape instead of tubes.
+function limb(profile, segs = 16) {
+  const g = new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), segs);
+  return g;
+}
+
+// Push vertices on one side of a limb outward over a height band (calf, biceps).
+function bulge(g, side, y0, y1, amount) {
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const y = p.getY(i), z = p.getZ(i);
+    if (y < y0 || y > y1 || Math.sign(z) !== side) continue;
+    const t = Math.sin(((y - y0) / (y1 - y0)) * Math.PI);
+    p.setZ(i, z * (1 + amount * t));
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
 let G = null;
 function geometries() {
   if (G) return G;
+  // Jersey over shoulder pads: narrow tucked waist flaring to a wide, flat-topped
+  // pad line (the football V), deeper through the chest than the waist.
   const torsoProfile = [
-    [0.13, -0.02], [0.146, 0.08], [0.165, 0.2], [0.186, 0.32], [0.205, 0.43],
-    [0.214, 0.5], [0.205, 0.56], [0.17, 0.615], [0.1, 0.655], [0.062, 0.672],
+    [0.118, -0.09], [0.122, -0.02], [0.13, 0.07], [0.148, 0.17], [0.172, 0.27], [0.192, 0.36],
+    [0.206, 0.44], [0.212, 0.5], [0.205, 0.555], [0.178, 0.605], [0.12, 0.645], [0.066, 0.668],
   ].map(([r, y]) => new THREE.Vector2(r, y));
-  const torso = new THREE.LatheGeometry(torsoProfile, 40, Math.PI / 2);
-  torso.scale(1.55, 1, 1.02);
+  const torso = new THREE.LatheGeometry(torsoProfile, 44, Math.PI / 2);
+  {
+    const p = torso.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const y = p.getY(i);
+      const k = THREE.MathUtils.smoothstep(y, 0.0, 0.5);
+      p.setX(i, p.getX(i) * (1.3 + 0.36 * k));
+      const z = p.getZ(i);
+      // Chest pushes forward, the back stays flatter.
+      p.setZ(i, z * (z > 0 ? 0.98 + 0.12 * k : 0.9 + 0.05 * k));
+    }
+    torso.computeVertexNormals();
+  }
 
   // Tapered pelvis that tucks under the jersey hem (no boxy "skirt").
   const hips = new THREE.LatheGeometry([
-    [0.118, -0.13], [0.142, -0.08], [0.15, 0.0], [0.142, 0.08], [0.128, 0.12],
+    [0.104, -0.13], [0.124, -0.08], [0.13, 0.0], [0.124, 0.07], [0.116, 0.11],
   ].map(([r, y]) => new THREE.Vector2(r, y)), 24, Math.PI / 2);
-  hips.scale(1.28, 1, 1.1);
+  hips.scale(1.3, 1, 1.0);
 
-  const thigh = new THREE.CapsuleGeometry(0.088, 0.3, 6, 14);
-  thigh.translate(0, -THIGH / 2, 0);
-  const kneePad = new THREE.SphereGeometry(0.062, 12, 8);
-  kneePad.scale(1, 1.1, 0.7);
-  kneePad.translate(0, -THIGH + 0.02, 0.05);
+  // Thigh in game pants: full at the hip, tapering to the knee, with a knee pad.
+  const thigh = limb([
+    [0.001, -0.49], [0.058, -0.478], [0.066, -0.44], [0.075, -0.38], [0.087, -0.28],
+    [0.097, -0.17], [0.104, -0.07], [0.101, 0.0], [0.075, 0.04], [0.001, 0.055],
+  ], 18);
+  thigh.scale(1, 1, 1.1);
+  bulge(thigh, 1, -0.36, -0.04, 0.12); // quads
+  const kneePad = new THREE.SphereGeometry(0.06, 14, 10);
+  kneePad.scale(1.05, 1.15, 0.62);
+  kneePad.translate(0, -THIGH + 0.03, 0.048);
   const thighFull = mergeGeometries([thigh, kneePad]);
 
-  const shin = new THREE.CapsuleGeometry(0.062, 0.32, 6, 12);
-  shin.scale(1, 1, 1.08);
-  shin.translate(0, -SHIN / 2, 0);
+  // Lower leg in socks: calf muscle at the back, slim ankle.
+  const shin = limb([
+    [0.001, -0.485], [0.038, -0.475], [0.041, -0.42], [0.046, -0.34], [0.058, -0.23],
+    [0.068, -0.13], [0.066, -0.05], [0.058, 0.0], [0.001, 0.03],
+  ], 16);
+  bulge(shin, -1, -0.3, -0.03, 0.35);
 
-  const foot = new THREE.BoxGeometry(0.11, 0.075, 0.3, 2, 1, 3);
-  // Round the toe a touch.
+  // Cleat: rounded upper, tapered toe, contrasting sole.
+  const foot = new RoundedBoxGeometry(0.105, 0.072, 0.3, 3, 0.03);
   const fp = foot.attributes.position;
   for (let i = 0; i < fp.count; i++) {
-    const z = fp.getZ(i);
-    if (z > 0.1) fp.setX(i, fp.getX(i) * 0.78);
+    const z = fp.getZ(i), y = fp.getY(i);
+    if (z > 0.04) {
+      const k = (z - 0.04) / 0.11;
+      fp.setX(i, fp.getX(i) * (1 - 0.28 * k));
+      if (y > 0) fp.setY(i, y * (1 - 0.55 * k));
+    }
   }
   foot.computeVertexNormals();
-  foot.translate(0, -0.04, 0.06);
+  foot.translate(0, -0.035, 0.06);
+  const sole = new RoundedBoxGeometry(0.11, 0.022, 0.305, 2, 0.008);
+  sole.translate(0, -0.075, 0.06);
 
-  const upper = new THREE.CapsuleGeometry(0.066, 0.22, 6, 12);
-  upper.translate(0, -UPPER / 2, 0);
+  // Upper arm with a biceps/triceps shape.
+  const upper = limb([
+    [0.001, -0.35], [0.052, -0.338], [0.056, -0.3], [0.066, -0.21], [0.076, -0.13],
+    [0.076, -0.05], [0.07, 0.0], [0.001, 0.04],
+  ], 14);
+  bulge(upper, 1, -0.26, -0.06, 0.16);
   const sleeve = new THREE.CylinderGeometry(0.098, 0.088, 0.15, 16, 1, true);
   sleeve.translate(0, -0.06, 0);
-  const shoulderCap = new THREE.SphereGeometry(0.115, 16, 10);
-  shoulderCap.scale(1.05, 0.85, 1);
-  const fore = new THREE.CapsuleGeometry(0.054, 0.21, 6, 12);
-  fore.translate(0, -FORE / 2, 0);
-  const hand = new THREE.SphereGeometry(0.052, 10, 8);
-  hand.scale(0.75, 1.25, 0.6);
-  hand.translate(0, -FORE - 0.05, 0);
+  // Shoulder pad caps: flat epaulets, not balls.
+  const shoulderCap = new THREE.SphereGeometry(0.115, 18, 10);
+  shoulderCap.scale(1.12, 0.6, 1.0);
+  // Forearm: thick below the elbow, narrow at the wrist.
+  const fore = limb([
+    [0.001, -0.31], [0.036, -0.302], [0.039, -0.27], [0.05, -0.18], [0.06, -0.09],
+    [0.056, -0.02], [0.001, 0.02],
+  ], 14);
+  fore.scale(1.12, 1, 0.95);
+  const tape = new THREE.CylinderGeometry(0.039, 0.041, 0.055, 14, 1, true);
+  tape.translate(0, -FORE + 0.03, 0);
 
-  const neck = new THREE.CylinderGeometry(0.058, 0.066, 0.13, 12);
+  // Glove: palm, curled fingers and a thumb.
+  const palm = new RoundedBoxGeometry(0.07, 0.085, 0.034, 2, 0.014);
+  palm.translate(0, -FORE - 0.04, 0.004);
+  const fingers = new RoundedBoxGeometry(0.066, 0.062, 0.028, 2, 0.012);
+  fingers.rotateX(0.55);
+  fingers.translate(0, -FORE - 0.1, 0.02);
+  const thumb = new RoundedBoxGeometry(0.022, 0.05, 0.022, 2, 0.009);
+  thumb.rotateZ(0.5);
+  thumb.translate(0.038, -FORE - 0.05, 0.016);
+  const hand = mergeGeometries([palm, fingers, thumb]);
+
+  const neck = new THREE.CylinderGeometry(0.064, 0.074, 0.13, 14);
   neck.translate(0, 0.05, 0);
   const face = new THREE.SphereGeometry(0.108, 24, 16, Math.PI * 1.5);
   face.scale(0.9, 1.1, 1.0);
@@ -78,7 +146,7 @@ function geometries() {
       cx += pos.getX(idx[i + k]); cy += pos.getY(idx[i + k]); cz += pos.getZ(idx[i + k]);
     }
     cx /= 3; cy /= 3; cz /= 3;
-    const open = cz > 0.02 && cy < 0.028 && Math.abs(cx) < 0.112 && cy > -0.2;
+    const open = cz > 0.03 && cy < 0.022 && Math.abs(cx) < 0.088 && cy > -0.2;
     const bottom = cy < -0.105 && !(Math.abs(cx) > 0.09 && cz > -0.05);
     if (!open && !bottom) keep.push(idx[i], idx[i + 1], idx[i + 2]);
   }
@@ -111,12 +179,19 @@ function geometries() {
   const mask = mergeGeometries(bars.map((b) => b.toNonIndexed()));
   const visor = new THREE.SphereGeometry(0.15, 24, 6, Math.PI * 1.5 + 1.0, Math.PI - 2.0, Math.PI / 2 - 0.02, 0.1);
   visor.scale(0.96, 1, 1.12);
-  const chin = new THREE.BoxGeometry(0.07, 0.04, 0.05);
+  const chin = new RoundedBoxGeometry(0.07, 0.04, 0.05, 2, 0.015);
   chin.translate(0, -0.13, 0.11);
+  // Jaw pads inside the shell frame the face like a real helmet.
+  const padL = new THREE.SphereGeometry(0.05, 12, 8);
+  padL.scale(0.55, 1.1, 1.1);
+  padL.translate(0.085, -0.055, 0.075);
+  const padR = padL.clone();
+  padR.translate(-0.17, 0, 0);
+  const jawPads = mergeGeometries([padL, padR]);
   const towel = new THREE.PlaneGeometry(0.11, 0.24);
   towel.translate(0, -0.12, 0);
 
-  G = { torso, hips, thigh: thighFull, shin, foot, upper, sleeve, shoulderCap, fore, hand, neck, face, shell, liner, mask, visor, chin, towel };
+  G = { torso, hips, thigh: thighFull, shin, foot, sole, upper, sleeve, shoulderCap, fore, tape, hand, neck, face, shell, liner, mask, visor, chin, towel, jawPads };
   return G;
 }
 
@@ -126,22 +201,31 @@ function teamMaterials(team, role) {
   const key = team.id + role;
   if (teamMatCache.has(key)) return teamMatCache.get(key);
   const kit = kitFor(team, role);
+  const knit = knitNormalTexture();
   const fabric = (map, color = '#ffffff') => new THREE.MeshPhysicalMaterial({
     map, color, roughness: 0.78, sheen: 0.5, sheenRoughness: 0.6, sheenColor: new THREE.Color('#ffffff'),
+    normalMap: knit, normalScale: new THREE.Vector2(0.35, 0.35),
   });
   const m = {
     kit,
     sleeve: fabric(sleeveTexture(kit)),
     shoulder: fabric(null, kit.jersey),
-    pants: fabric(pantsTexture(kit)),
-    socks: new THREE.MeshStandardMaterial({ color: kit.socks, roughness: 0.85 }),
-    glove: new THREE.MeshStandardMaterial({ color: kit.glove, roughness: 0.55 }),
-    cleat: new THREE.MeshStandardMaterial({ color: kit.cleat, roughness: 0.45 }),
+    // Game pants are stretchy and a little shiny.
+    pants: new THREE.MeshPhysicalMaterial({
+      map: pantsTexture(kit), roughness: 0.5, sheen: 0.8, sheenRoughness: 0.35, sheenColor: new THREE.Color('#ffffff'),
+      normalMap: knit, normalScale: new THREE.Vector2(0.2, 0.2), clearcoat: 0.08,
+    }),
+    socks: new THREE.MeshPhysicalMaterial({ color: kit.socks, roughness: 0.88, sheen: 0.4, sheenColor: new THREE.Color('#ffffff'), normalMap: knit, normalScale: new THREE.Vector2(0.5, 0.5) }),
+    glove: new THREE.MeshPhysicalMaterial({ color: kit.glove, roughness: 0.38, clearcoat: 0.3, clearcoatRoughness: 0.4 }),
+    cleat: new THREE.MeshPhysicalMaterial({ color: kit.cleat, roughness: 0.35, clearcoat: 0.6, clearcoatRoughness: 0.2 }),
+    sole: new THREE.MeshStandardMaterial({ color: kit.cleat === '#111111' ? '#e9e9e6' : '#1a1a1c', roughness: 0.7 }),
+    tape: new THREE.MeshStandardMaterial({ color: '#f2f2ee', roughness: 0.85 }),
     helmet: new THREE.MeshPhysicalMaterial({
       map: helmetTexture(team), roughness: 0.32, metalness: team.helmet === '#d8a637' || team.helmet === '#c9a46a' ? 0.45 : 0.05,
       clearcoat: 1, clearcoatRoughness: 0.06,
     }),
     liner: new THREE.MeshStandardMaterial({ color: '#16161a', roughness: 0.9, side: THREE.BackSide }),
+    liner2: new THREE.MeshStandardMaterial({ color: '#1c1c20', roughness: 0.85 }),
     mask: new THREE.MeshStandardMaterial({ color: team.mask, roughness: 0.38, metalness: 0.25 }),
     visor: new THREE.MeshPhysicalMaterial({ color: '#0c0d10', roughness: 0.05, metalness: 0.6, transparent: true, opacity: 0.88, side: THREE.DoubleSide }),
     chin: new THREE.MeshStandardMaterial({ color: '#e8e8e8', roughness: 0.6 }),
@@ -190,9 +274,11 @@ export class PlayerModel {
     this.info = info;
     this.size = info.rat?.size ?? 1;
 
+    // Mesh jersey fabric: fine perforated knit in the normal map.
     this.jerseyMat = new THREE.MeshPhysicalMaterial({
-      map: jerseyTexture(tm.kit, info.num, info.last), roughness: 0.74,
+      map: jerseyTexture(tm.kit, info.num, info.last), roughness: 0.72,
       sheen: 0.6, sheenRoughness: 0.5, sheenColor: new THREE.Color('#ffffff'),
+      normalMap: fabricNormalTexture(), normalScale: new THREE.Vector2(0.45, 0.45),
     });
 
     const mesh = (geo, mat, parent, shadow = true) => {
@@ -215,7 +301,7 @@ export class PlayerModel {
     mesh(g.hips, tm.pants, this.pelvis).position.y = 0.0;
 
     this.spine = new THREE.Group();
-    this.spine.position.y = 0.06;
+    this.spine.position.y = 0.075;
     this.pelvis.add(this.spine);
     mesh(g.torso, this.jerseyMat, this.spine);
     if (info.towel) {
@@ -225,14 +311,16 @@ export class PlayerModel {
     }
 
     this.neck = new THREE.Group();
-    this.neck.position.y = 0.64;
+    this.neck.position.y = 0.625;
     this.spine.add(this.neck);
     mesh(g.neck, sk.skin, this.neck);
     this.head = new THREE.Group();
-    this.head.position.y = 0.17;
+    this.head.position.y = 0.16;
+    this.head.scale.setScalar(1.12); // helmets are big next to the body
     this.neck.add(this.head);
     const face = mesh(g.face, sk.face, this.head);
-    face.position.set(0, -0.012, 0.012);
+    face.position.set(0, -0.016, -0.006);
+    face.scale.setScalar(0.94);
     const shell = mesh(g.shell, tm.helmet, this.head);
     shell.position.set(0, 0.02, -0.005);
     const liner = mesh(g.liner, tm.liner, this.head, false);
@@ -240,6 +328,7 @@ export class PlayerModel {
     const mask = mesh(g.mask, tm.mask, this.head);
     mask.position.set(0, 0.0, 0.0);
     mesh(g.chin, tm.chin, this.head, false);
+    mesh(g.jawPads, tm.liner2, this.head, false);
     if (info.visor) {
       const v = mesh(g.visor, tm.visor, this.head, false);
       v.position.set(0, 0.0, 0.0);
@@ -250,10 +339,11 @@ export class PlayerModel {
     for (const side of ['L', 'R']) {
       const sx = side === 'L' ? 1 : -1;
       const sh = new THREE.Group();
-      sh.position.set(sx * 0.27, 0.53, -0.01);
+      sh.position.set(sx * 0.29, 0.52, -0.01);
       this.spine.add(sh);
       const cap = mesh(g.shoulderCap, tm.shoulder, this.spine);
-      cap.position.set(sx * 0.255, 0.545, 0);
+      cap.position.set(sx * 0.262, 0.54, 0.005);
+      cap.rotation.z = sx * -0.28;
       mesh(g.upper, armMat, sh);
       mesh(g.sleeve, tm.sleeve, sh);
       const elbow = new THREE.Group();
@@ -261,6 +351,7 @@ export class PlayerModel {
       sh.add(elbow);
       mesh(g.fore, armMat, elbow);
       mesh(g.hand, tm.glove, elbow);
+      if ((info.num + (side === 'L' ? 1 : 0)) % 3 !== 0) mesh(g.tape, tm.tape, elbow, false);
 
       const hip = new THREE.Group();
       hip.position.set(sx * 0.105, -0.02, 0);
@@ -274,6 +365,7 @@ export class PlayerModel {
       ankle.position.y = -SHIN;
       knee.add(ankle);
       mesh(g.foot, tm.cleat, ankle);
+      mesh(g.sole, tm.sole, ankle);
       limbs[side] = { sh, elbow, hip, knee, ankle };
     }
     this.limbs = limbs;

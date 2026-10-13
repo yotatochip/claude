@@ -106,12 +106,19 @@ export class CameraDirector {
     this.fov = damp(this.fov, fov, 3, dt);
     this.shake = Math.max(0, this.shake - dt * 2.5);
     const s = this.shake * this.shake * 0.12;
+    // A camera operator never holds perfectly still: slow, tiny drift.
+    const sway = mode === 'broadcast' || mode === 'kick' || mode === 'goalpost' ? 1 : 0.4;
+    const t = this.t;
+    const dx = (Math.sin(t * 0.73) + Math.sin(t * 1.91) * 0.5) * 0.04 * sway;
+    const dy = (Math.sin(t * 0.61 + 1.3) + Math.sin(t * 2.3) * 0.4) * 0.03 * sway;
     this.camera.position.set(
-      this.pos.x + (Math.random() - 0.5) * s,
-      this.pos.y + (Math.random() - 0.5) * s,
+      this.pos.x + (Math.random() - 0.5) * s + dx,
+      this.pos.y + (Math.random() - 0.5) * s + dy,
       this.pos.z + (Math.random() - 0.5) * s,
     );
-    this.camera.lookAt(this.look);
+    this._v.copy(this.look);
+    this._v.y += Math.sin(t * 0.83 + 0.4) * 0.05 * sway;
+    this.camera.lookAt(this._v);
     if (Math.abs(this.camera.fov - this.fov) > 0.01) {
       this.camera.fov = this.fov;
       this.camera.updateProjectionMatrix();

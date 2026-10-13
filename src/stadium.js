@@ -1,7 +1,7 @@
 // The bowl: stands, crowd, light rigs, video board, LED ribbons and sideline life.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { crowdFillTexture, concreteTexture, SKIN_TONES, DISPLAY_FONT, glowTexture } from './textures.js';
+import { crowdFillTexture, concreteTexture, SKIN_TONES, DISPLAY_FONT, glowTexture, kitFor } from './textures.js';
 import { mulberry32, FIELD, shade } from './util.js';
 
 const A = 73, B = 43, RC = 24; // inner wall of the bowl (half extents + corner radius)
@@ -121,31 +121,63 @@ function seatsAlong(path, offset, spacing, cb) {
   }
 }
 
+// Fans: shaped bodies with shirts, pants, hair and arms that go up on big plays.
+// Part ids: 0 shirt, 1 skin, 2 hair (or helmet), 3 pants.
 const CROWD_VERT = /* glsl */`
   attribute vec3 aShirt;
   attribute vec3 aSkin;
+  attribute vec3 aPants;
+  attribute vec3 aHelmet;
   attribute vec2 aAnim; // phase, energy
-  attribute float aHead;
+  attribute float aPart;
+  attribute float aArm;
   uniform float uTime;
   uniform float uExcite;
+  uniform float uHelmets;
   uniform vec3 uLightDir;
   uniform vec3 uLightCol;
   uniform vec3 uAmbient;
   varying vec3 vCol;
   varying float vFog;
+  float hash(float n) { return fract(sin(n * 91.345) * 47453.5453); }
   void main() {
     vec3 p = position;
+    float id = aAnim.x;
     float e = clamp(uExcite * aAnim.y, 0.0, 1.5);
-    float bounce = max(0.0, sin(uTime * (7.0 + aAnim.x * 3.0) + aAnim.x * 40.0));
-    p.y += bounce * e * 0.28 + sin(uTime * 1.3 + aAnim.x * 30.0) * 0.02;
-    p.x += sin(uTime * 0.9 + aAnim.x * 17.0) * 0.03;
+    // Arms: a share of the crowd throws them up when the stadium gets loud.
+    if (aArm != 0.0) {
+      float lift = clamp((e - 0.3) * 1.8, 0.0, 1.0) * step(0.4, hash(id * 13.0));
+      float idle = hash(id * 5.0) > 0.86 ? 0.35 : 0.0; // a few clap or hold phones up
+      float a = aArm * (max(lift * 2.75, idle * (1.6 + sin(uTime * 3.0 + id * 40.0) * 0.2)) + lift * sin(uTime * 7.0 + id * 60.0) * 0.18);
+      vec2 pivot = vec2(aArm * 0.235, 1.43);
+      vec2 d = p.xy - pivot;
+      float c = cos(a), s = sin(a);
+      p.xy = pivot + vec2(d.x * c - d.y * s, d.x * s + d.y * c);
+    }
+    float bounce = max(0.0, sin(uTime * (7.0 + id * 3.0) + id * 40.0));
+    p.y += bounce * e * 0.26 + sin(uTime * 1.3 + id * 30.0) * 0.015;
+    p.x += sin(uTime * 0.7 + id * 17.0) * 0.03;
     vec4 wp = modelMatrix * instanceMatrix * vec4(p, 1.0);
     vec3 n = normalize(mat3(modelMatrix * instanceMatrix) * normal);
     float diff = max(dot(n, uLightDir), 0.0);
-    vec3 base = mix(aShirt, aSkin, aHead);
-    vCol = base * (uAmbient + uLightCol * diff);
+    // Hair: black, dark brown, brown, blonde, gray, or a hat in the shirt color.
+    float h = hash(id * 3.0);
+    vec3 hair = h < 0.35 ? vec3(0.02, 0.018, 0.016) : h < 0.6 ? vec3(0.07, 0.04, 0.025) : h < 0.75 ? vec3(0.16, 0.09, 0.05)
+              : h < 0.85 ? vec3(0.45, 0.33, 0.16) : h < 0.92 ? vec3(0.32, 0.31, 0.3) : aShirt;
+    vec3 base = aPart < 0.5 ? aShirt : aPart < 1.5 ? aSkin : aPart < 2.5 ? hair : aPants;
+    // Players on the sideline wear their helmets.
+    if (uHelmets > 0.5 && position.y > 1.47) base = aHelmet;
+    // Lower body sits in the shadow of the row in front.
+    float occ = mix(0.45, 1.0, smoothstep(0.35, 1.3, position.y));
+    float jitter = 0.78 + 0.3 * hash(id * 17.0);
+    float sky = 0.65 + 0.35 * n.y;
+    vCol = base * (uAmbient * sky + uLightCol * diff) * occ * jitter;
+    // Phone and camera flashes pop around the bowl, more when it's loud.
+    float flashSeed = hash(id * 7.0 + floor(uTime * 12.0));
+    float flash = step(1.0 - (0.0006 + e * 0.004), flashSeed) * step(0.5, abs(aArm)) * step(0.5, aPart);
+    vCol += vec3(4.0) * flash;
     vec4 mv = viewMatrix * wp;
-    vFog = smoothstep(120.0, 320.0, -mv.z);
+    vFog = smoothstep(140.0, 360.0, -mv.z);
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -154,24 +186,54 @@ const CROWD_FRAG = /* glsl */`
   varying vec3 vCol;
   varying float vFog;
   void main() {
-    gl_FragColor = vec4(mix(vCol, uFogColor, vFog * 0.5), 1.0);
+    gl_FragColor = vec4(mix(vCol, uFogColor, vFog * 0.45), 1.0);
   }
 `;
 
+function tag(g, part, arm = 0) {
+  g = g.index ? g.toNonIndexed() : g;
+  g.deleteAttribute('uv');
+  const n = g.attributes.position.count;
+  g.setAttribute('aPart', new THREE.Float32BufferAttribute(new Float32Array(n).fill(part), 1));
+  g.setAttribute('aArm', new THREE.Float32BufferAttribute(new Float32Array(n).fill(arm), 1));
+  return g;
+}
+
+// ~80 triangles: legs, tapered torso, round head with hair, two-piece arms.
 function personGeometry(height = 1.0) {
-  const torso = new THREE.BoxGeometry(0.44, 0.62, 0.26);
-  torso.translate(0, 1.12 * height, 0);
-  const legs = new THREE.BoxGeometry(0.36, 0.78, 0.22);
-  legs.translate(0, 0.42, 0);
-  const head = new THREE.IcosahedronGeometry(0.12, 0);
-  head.translate(0, 1.58 * height, 0.02);
-  const parts = [torso, legs, head].map((g) => g.toNonIndexed());
-  const headFlags = [0, 0, 1];
-  parts.forEach((g, i) => {
-    const n = g.attributes.position.count;
-    g.setAttribute('aHead', new THREE.Float32BufferAttribute(new Float32Array(n).fill(headFlags[i]), 1));
-    g.deleteAttribute('uv');
-  });
+  const parts = [];
+  const legs = new THREE.BoxGeometry(0.3, 0.86, 0.17);
+  legs.translate(0, 0.43, 0);
+  parts.push(tag(legs, 3));
+  const torso = new THREE.CylinderGeometry(0.2, 0.155, 0.6, 6, 1, false);
+  torso.scale(1, 1, 0.62);
+  torso.translate(0, 0.86 + 0.3 * height, 0);
+  parts.push(tag(torso, 0));
+  const head = new THREE.SphereGeometry(0.105, 6, 4);
+  head.scale(0.95, 1.1, 1);
+  head.translate(0, 1.6 * height, 0.01);
+  const hg = head.toNonIndexed();
+  hg.deleteAttribute('uv');
+  const hp = hg.attributes.position;
+  const part = new Float32Array(hp.count);
+  for (let i = 0; i < hp.count; i += 3) {
+    const cy = (hp.getY(i) + hp.getY(i + 1) + hp.getY(i + 2)) / 3 - 1.6 * height;
+    const cz = (hp.getZ(i) + hp.getZ(i + 1) + hp.getZ(i + 2)) / 3;
+    const isHair = cy > 0.035 || (cz < -0.03 && cy > -0.04);
+    part[i] = part[i + 1] = part[i + 2] = isHair ? 2 : 1;
+  }
+  hg.setAttribute('aPart', new THREE.BufferAttribute(part, 1));
+  hg.setAttribute('aArm', new THREE.Float32BufferAttribute(new Float32Array(hp.count), 1));
+  parts.push(hg);
+  for (const side of [-1, 1]) {
+    const sleeve = new THREE.BoxGeometry(0.085, 0.26, 0.09);
+    sleeve.translate(side * 0.235, 1.43 - 0.13, 0);
+    parts.push(tag(sleeve, 0, side));
+    const fore = new THREE.BoxGeometry(0.07, 0.34, 0.075);
+    fore.translate(side * 0.235, 1.43 - 0.26 - 0.17, 0.02);
+    parts.push(tag(fore, 1, side));
+  }
+  // Flat-shade the boxy parts so they read as cloth folds at a distance.
   return mergeGeometries(parts);
 }
 
@@ -267,6 +329,7 @@ export class Stadium {
         this.group.add(cap);
       }
     }
+    this.buildCanopies();
     // Press box on the -z side.
     const pb = new THREE.Group();
     const shell = new THREE.Mesh(new THREE.BoxGeometry(80, 7, 7), new THREE.MeshStandardMaterial({ color: '#3a3b40', roughness: 0.7 }));
@@ -280,6 +343,55 @@ export class Stadium {
     this.group.add(pb);
   }
 
+  // Cantilevered steel roofs over both upper decks, with the light rigs hung
+  // along their front edge like a modern college stadium.
+  buildCanopies() {
+    const front = 27.5, back = this.upperTop.o + 3.2;
+    this.canopy = { front, y: 44 };
+    const shape = new THREE.Shape();
+    shape.moveTo(front, 43.3);
+    shape.lineTo(front, 44.6);
+    shape.lineTo(back, 41.9);
+    shape.lineTo(back, 40.8);
+    shape.closePath();
+    const roofGeo = new THREE.ExtrudeGeometry(shape, { depth: 124, bevelEnabled: false });
+    const roofMat = new THREE.MeshStandardMaterial({ color: '#555860', roughness: 0.75, metalness: 0.35, emissive: '#3a3d44', emissiveIntensity: 0 });
+    const steel = new THREE.MeshStandardMaterial({ color: '#34363c', roughness: 0.6, metalness: 0.6, emissive: '#2a2c31', emissiveIntensity: 0 });
+    this.roofMats = [roofMat, steel];
+    // Underside girders front to back, plus a deep front truss.
+    const beams = [];
+    for (let x = 0; x <= 124; x += 7.75) {
+      const b = new THREE.BoxGeometry(0.5, 1.4, back - front);
+      b.rotateX(Math.atan2(44.6 - 41.9, back - front));
+      b.translate(x, 0, 0);
+      beams.push(b);
+    }
+    const girderGeo = mergeGeometries(beams);
+    for (const sgn of [-1, 1]) {
+      const roof = new THREE.Mesh(roofGeo, roofMat);
+      roof.rotation.y = sgn > 0 ? -Math.PI / 2 : Math.PI / 2;
+      roof.position.set(sgn * 62, 0, sgn * B);
+      roof.castShadow = true;
+      roof.receiveShadow = true;
+      this.group.add(roof);
+      const girders = new THREE.Mesh(girderGeo, steel);
+      girders.position.set(-62, 42.6, sgn * (B + (front + back) / 2));
+      girders.castShadow = true;
+      this.group.add(girders);
+      const truss = new THREE.Mesh(new THREE.BoxGeometry(124, 2.2, 0.8), steel);
+      truss.position.set(0, 42.7, sgn * (B + front + 0.4));
+      truss.castShadow = true;
+      this.group.add(truss);
+      // Support columns behind the upper deck.
+      for (let x = -55; x <= 55; x += 22) {
+        const col = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.9, 42, 10), steel);
+        col.position.set(x, 21, sgn * (B + back - 0.5));
+        col.castShadow = true;
+        this.group.add(col);
+      }
+    }
+  }
+
   crowdPalette() {
     const h = this.home;
     return [h.primary, h.primary, h.primary, h.secondary, h.secondary, '#f4f4f2', '#202024', '#5c6066', h.primary]
@@ -288,7 +400,7 @@ export class Stadium {
 
   buildCrowd(quality) {
     if (quality === 'low') return;
-    const spacing = quality === 'high' ? 0.62 : 0.85;
+    const spacing = quality === 'high' ? 0.66 : 0.88;
     const rowStep = quality === 'high' ? 1 : 2;
     const rnd = mulberry32(99);
     const homeP = new THREE.Color(this.home.primary), homeS = new THREE.Color(this.home.secondary);
@@ -351,25 +463,33 @@ export class Stadium {
     this.group.add(this.crowdMesh);
   }
 
-  makeCrowdMesh(geo, seats) {
+  makeCrowdMesh(geo, seats, helmets = false) {
     const g = new THREE.InstancedBufferGeometry();
     g.index = geo.index;
     for (const k of Object.keys(geo.attributes)) g.setAttribute(k, geo.attributes[k]);
     const n = seats.length;
-    const shirt = new Float32Array(n * 3), skin = new Float32Array(n * 3), anim = new Float32Array(n * 2);
+    const shirt = new Float32Array(n * 3), skin = new Float32Array(n * 3), pants = new Float32Array(n * 3), anim = new Float32Array(n * 2);
+    const helm = new Float32Array(n * 3);
+    const denim = [new THREE.Color('#1d2533'), new THREE.Color('#2b3346'), new THREE.Color('#141416'), new THREE.Color('#6b6150'), new THREE.Color('#3a3a3e')];
     seats.forEach((s, i) => {
       shirt.set([s.shirt.r, s.shirt.g, s.shirt.b], i * 3);
       skin.set([s.skin.r, s.skin.g, s.skin.b], i * 3);
+      const pc = s.pants || denim[Math.floor(s.phase * 977) % denim.length];
+      pants.set([pc.r, pc.g, pc.b], i * 3);
+      const hc = s.helmet || s.shirt;
+      helm.set([hc.r, hc.g, hc.b], i * 3);
       anim.set([s.phase, s.energy], i * 2);
     });
     g.setAttribute('aShirt', new THREE.InstancedBufferAttribute(shirt, 3));
     g.setAttribute('aSkin', new THREE.InstancedBufferAttribute(skin, 3));
+    g.setAttribute('aPants', new THREE.InstancedBufferAttribute(pants, 3));
     g.setAttribute('aAnim', new THREE.InstancedBufferAttribute(anim, 2));
+    g.setAttribute('aHelmet', new THREE.InstancedBufferAttribute(helm, 3));
     const mat = new THREE.ShaderMaterial({
       vertexShader: CROWD_VERT,
       fragmentShader: CROWD_FRAG,
       uniforms: {
-        uTime: { value: 0 }, uExcite: { value: 0.2 },
+        uTime: { value: 0 }, uExcite: { value: 0.2 }, uHelmets: { value: helmets ? 1 : 0 },
         uLightDir: { value: new THREE.Vector3(0.3, 0.8, 0.2).normalize() },
         uLightCol: { value: new THREE.Color(1, 0.97, 0.9) },
         uAmbient: { value: new THREE.Color(0.35, 0.38, 0.45) },
@@ -405,20 +525,25 @@ export class Stadium {
       bench.castShadow = true;
       bench.receiveShadow = true;
       this.group.add(bench);
-      const kitShirt = s > 0 ? new THREE.Color(team.primary) : new THREE.Color('#f2f2f0');
+      const kit = kitFor(team, s > 0 ? 'home' : 'away');
+      const kitShirt = new THREE.Color(kit.jersey);
+      const kitPants = new THREE.Color(kit.pants);
       const helmet = new THREE.Color(team.helmet);
       for (let i = 0; i < 70; i++) {
         const staff = rnd() < 0.18;
+        const skin = new THREE.Color(SKIN_TONES[Math.floor(rnd() * 6)]);
         seats.push({
           x: -24 + rnd() * 48, y: 0, z: z + s * (rnd() * 2.6),
           yaw: s > 0 ? Math.PI + (rnd() - 0.5) * 0.8 : (rnd() - 0.5) * 0.8,
           shirt: staff ? new THREE.Color(rnd() < 0.5 ? '#222326' : team.primary) : kitShirt,
-          skin: staff ? new THREE.Color(SKIN_TONES[Math.floor(rnd() * 6)]) : helmet,
+          skin,
+          pants: staff ? new THREE.Color('#3a3530') : kitPants,
+          helmet: staff ? new THREE.Color('#1e1a16') : helmet,
           phase: rnd(), energy: 0.7, scale: 1.12 + rnd() * 0.12,
         });
       }
     }
-    this.sidelineMesh = this.makeCrowdMesh(personGeometry(1.05), seats);
+    this.sidelineMesh = this.makeCrowdMesh(personGeometry(1.05), seats, true);
     this.group.add(this.sidelineMesh);
 
     // Field wall pads + cameras on the far sideline.
@@ -566,7 +691,7 @@ export class Stadium {
   buildLights() {
     // Banks of luminaires on top of the upper decks and four corner masts.
     const panelGeo = new THREE.BoxGeometry(1.1, 1.1, 0.5);
-    const count = 2 * 9 * 24 + 4 * 30;
+    const count = 2 * 12 * 18 + 4 * 30;
     this.panelMat = new THREE.MeshStandardMaterial({ color: '#d9d9d6', emissive: '#fff6e8', emissiveIntensity: 0, roughness: 0.3 });
     const panels = new THREE.InstancedMesh(panelGeo, this.panelMat, count);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3(1, 1, 1);
@@ -588,10 +713,10 @@ export class Stadium {
       }
       this.lightSpots.push(new THREE.Vector3(cx, cy + rows * 0.65, cz));
     };
-    const top = this.upperTop.h + 6;
+    // Rigs hang under the canopy's front edge.
     for (const sz of [-1, 1]) {
-      for (let b = 0; b < 9; b++) {
-        addBank(-48 + b * 12, top + (sz < 0 ? 7 : 0), sz * (B + this.upperTop.o + 2), 6, 4);
+      for (let b = 0; b < 12; b++) {
+        addBank(-55 + b * 10, this.canopy.y - 3.6, sz * (B + this.canopy.front - 0.6), 6, 3);
       }
     }
     const mastMat = new THREE.MeshStandardMaterial({ color: '#4a4b50', roughness: 0.6, metalness: 0.5 });
@@ -611,9 +736,10 @@ export class Stadium {
     const glow = glowTexture();
     this.glows = new THREE.Group();
     for (const sp of this.lightSpots) {
-      const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: '#fff3dc', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.85 }));
+      // A tight halo only: big additive glows read as fog over the stands.
+      const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: '#fff3dc', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.32 }));
       spr.position.copy(sp);
-      spr.scale.setScalar(16);
+      spr.scale.setScalar(6.5);
       this.glows.add(spr);
     }
     this.group.add(this.glows);
@@ -648,7 +774,9 @@ export class Stadium {
   }
 
   setLighting({ night, sunDir, sunColor, ambient, fog }) {
-    this.panelMat.emissiveIntensity = night ? 9 : 0.0;
+    this.panelMat.emissiveIntensity = night ? 5 : 0.0;
+    // Spill from the rigs lights the underside of the roofs at night.
+    for (const m of this.roofMats || []) m.emissiveIntensity = night ? 1.6 : 0;
     this.glows.visible = night;
     this.windowMat.emissiveIntensity = night ? 1.2 : 0.15;
     for (const mat of this.crowdMats) {
