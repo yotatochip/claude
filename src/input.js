@@ -53,7 +53,8 @@ export class Input {
     }
 
     // Gamepad.
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    let pads = [];
+    try { pads = navigator.getGamepads ? navigator.getGamepads() : []; } catch { pads = []; } // blocked in some embeds
     const pad = pads && Array.from(pads).find((p) => p && p.connected);
     if (pad) {
       const b = pad.buttons.map((x) => x.pressed || x.value > 0.5);
