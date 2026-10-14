@@ -1,0 +1,3888 @@
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">
+  <Item class="ReplicatedStorage" referent="RBX3">
+   <Properties>
+    <string name="Name">ReplicatedStorage</string>
+   </Properties>
+    <Item class="Folder" referent="RBX2">
+     <Properties>
+      <string name="Name">Shared</string>
+     </Properties>
+      <Item class="ModuleScript" referent="RBX0">
+       <Properties>
+        <string name="Name">Config</string>
+        <ProtectedString name="Source"><![CDATA[--!strict
+-- Every tunable number in Sharks Vs Minnows lives here, shared by the server and the client.
+
+local Config = {}
+
+-- Round flow -----------------------------------------------------------------
+Config.MinPlayersToStart = 1 -- real players needed; bots fill the rest
+Config.IntermissionTime = 20
+Config.ReadyTime = 4 -- countdown before each crossing while the gates are shut
+Config.CrossTime = 22 -- seconds the minnows have to reach the far shore
+Config.MaxCrossings = 8 -- survive this many and every remaining minnow wins
+Config.EndScreenTime = 7
+Config.SharksPerPlayers = 7 -- one starting shark for every 7 participants (min 1)
+
+-- Bots keep a small or solo server playable.
+Config.BotsEnabled = true
+Config.BotFillTarget = 8 -- top the round up to this many participants
+
+-- Movement ---------------------------------------------------------------------
+Config.MinnowSpeed = 20
+Config.SharkSpeed = 21
+Config.LobbySpeed = 18
+Config.TagRange = 4.6 -- studs between root parts that counts as a chomp
+Config.TagGrace = 1.0 -- seconds a brand-new shark can't tag (no instant chain tags)
+
+-- Map layout (the arena runs along the X axis) --------------------------------
+Config.ArenaHalfLength = 120 -- shore edge to shore edge is 2x this
+Config.SafeLine = 85 -- |x| beyond this is a shore safe zone
+Config.ArenaHalfWidth = 70
+Config.LobbyCenter = Vector3.new(0, 0, -220)
+
+-- Rewards ------------------------------------------------------------------------
+Config.Rewards = {
+	Crossing = 10, -- per crossing survived
+	Tag = 15, -- per minnow chomped
+	MinnowWin = 60,
+	LastMinnowBonus = 40,
+	SharkWin = 35, -- each shark when the ocean is cleared
+	WinGems = 1,
+	Participation = 5,
+}
+
+-- Abilities (E) ------------------------------------------------------------------
+export type AbilityDef = {
+	Id: string,
+	Name: string,
+	Role: "Minnow" | "Shark",
+	Description: string,
+	Cooldown: number,
+	Price: number, -- coins, 0 = owned by default
+	Color: Color3,
+	Icon: string,
+}
+
+Config.Abilities = {
+	-- Minnow
+	Dash = {
+		Id = "Dash", Name = "Dart", Role = "Minnow", Price = 0, Cooldown = 8,
+		Description = "A short burst of speed in the direction you're running.",
+		Color = Color3.fromRGB(255, 170, 60), Icon = "💨",
+	},
+	Bubble = {
+		Id = "Bubble", Name = "Bubble Shield", Role = "Minnow", Price = 250, Cooldown = 22,
+		Description = "Wrap yourself in a bubble. Chomps bounce off for 2.5s.",
+		Color = Color3.fromRGB(120, 220, 255), Icon = "🫧",
+	},
+	Ink = {
+		Id = "Ink", Name = "Ink Cloud", Role = "Minnow", Price = 400, Cooldown = 18,
+		Description = "Burst a cloud of ink. Nearby sharks are slowed and blinded.",
+		Color = Color3.fromRGB(120, 80, 200), Icon = "🦑",
+	},
+	Riptide = {
+		Id = "Riptide", Name = "Riptide", Role = "Minnow", Price = 750, Cooldown = 20,
+		Description = "Ride the current: +9 speed for 3 seconds.",
+		Color = Color3.fromRGB(60, 240, 190), Icon = "🌊",
+	},
+	-- Shark
+	Lunge = {
+		Id = "Lunge", Name = "Lunge", Role = "Shark", Price = 0, Cooldown = 7,
+		Description = "Explode forward to snap up a minnow.",
+		Color = Color3.fromRGB(255, 80, 80), Icon = "🦈",
+	},
+	Sonar = {
+		Id = "Sonar", Name = "Sonar", Role = "Shark", Price = 300, Cooldown = 20,
+		Description = "Ping the water. See every minnow through walls for 4s.",
+		Color = Color3.fromRGB(80, 160, 255), Icon = "📡",
+	},
+	Frenzy = {
+		Id = "Frenzy", Name = "Frenzy", Role = "Shark", Price = 500, Cooldown = 24,
+		Description = "Blood in the water: +8 speed and a bigger bite for 3.5s.",
+		Color = Color3.fromRGB(220, 30, 60), Icon = "🩸",
+	},
+	Whirlpool = {
+		Id = "Whirlpool", Name = "Whirlpool", Role = "Shark", Price = 850, Cooldown = 26,
+		Description = "Spin up a whirlpool. Minnows caught inside are slowed for 3s.",
+		Color = Color3.fromRGB(40, 120, 200), Icon = "🌀",
+	},
+} :: { [string]: AbilityDef }
+
+Config.AbilityOrder = { "Dash", "Bubble", "Ink", "Riptide", "Lunge", "Sonar", "Frenzy", "Whirlpool" }
+Config.DefaultAbility = { Minnow = "Dash", Shark = "Lunge" }
+
+-- Consumables (1, 2, 3) ----------------------------------------------------------------
+export type ItemDef = {
+	Id: string,
+	Name: string,
+	Role: "Any" | "Minnow" | "Shark",
+	Description: string,
+	Price: number,
+	Key: string,
+	Color: Color3,
+	Icon: string,
+}
+
+Config.Items = {
+	Kelp = {
+		Id = "Kelp", Name = "Speed Kelp", Role = "Any", Price = 30, Key = "1",
+		Description = "+7 speed for 4 seconds. Works for minnows and sharks.",
+		Color = Color3.fromRGB(90, 200, 80), Icon = "🌿",
+	},
+	Pearl = {
+		Id = "Pearl", Name = "Lucky Pearl", Role = "Minnow", Price = 75, Key = "2",
+		Description = "Blocks the next chomp within 8 seconds.",
+		Color = Color3.fromRGB(255, 240, 220), Icon = "🦪",
+	},
+	Net = {
+		Id = "Net", Name = "Fishing Net", Role = "Shark", Price = 50, Key = "3",
+		Description = "Drop a net. The first minnow through it is stuck for 1.5s.",
+		Color = Color3.fromRGB(200, 170, 110), Icon = "🕸️",
+	},
+} :: { [string]: ItemDef }
+
+Config.ItemOrder = { "Kelp", "Pearl", "Net" }
+Config.ItemCooldown = 3 -- shared between all consumables
+Config.StarterItems = { Kelp = 2, Pearl = 1, Net = 1 }
+
+-- Trails (bought with gems) ------------------------------------------------------------
+export type TrailDef = {
+	Id: string,
+	Name: string,
+	Price: number, -- gems
+	Colors: { Color3 },
+}
+
+Config.Trails = {
+	Bubbles = { Id = "Bubbles", Name = "Bubbles", Price = 2, Colors = { Color3.fromRGB(200, 240, 255), Color3.fromRGB(120, 200, 255) } },
+	Coral = { Id = "Coral", Name = "Coral Reef", Price = 4, Colors = { Color3.fromRGB(255, 120, 140), Color3.fromRGB(255, 200, 120) } },
+	Toxic = { Id = "Toxic", Name = "Toxic Waste", Price = 6, Colors = { Color3.fromRGB(150, 255, 60), Color3.fromRGB(40, 140, 30) } },
+	Gold = { Id = "Gold", Name = "Sunken Gold", Price = 10, Colors = { Color3.fromRGB(255, 220, 90), Color3.fromRGB(200, 140, 30) } },
+	Rainbow = {
+		Id = "Rainbow", Name = "Rainbow Reef", Price = 15,
+		Colors = { Color3.fromRGB(255, 80, 80), Color3.fromRGB(255, 220, 60), Color3.fromRGB(80, 220, 120), Color3.fromRGB(80, 140, 255), Color3.fromRGB(200, 90, 255) },
+	},
+} :: { [string]: TrailDef }
+
+Config.TrailOrder = { "Bubbles", "Coral", "Toxic", "Gold", "Rainbow" }
+
+-- Codes. Keys are upper case; players can type any case.
+Config.Codes = {
+	SHARKBAIT = { Coins = 150 },
+	MINNOWMANIA = { Gems = 2 },
+	FINSUP = { Coins = 100, Items = { Kelp = 3 } },
+	RELEASE = { Coins = 250, Gems = 1 },
+} :: { [string]: { Coins: number?, Gems: number?, Items: { [string]: number }? } }
+
+-- Colors used across the UI and the world.
+Config.Colors = {
+	Minnow = Color3.fromRGB(255, 160, 50),
+	Shark = Color3.fromRGB(70, 110, 160),
+	SharkOutline = Color3.fromRGB(255, 60, 60),
+	Coins = Color3.fromRGB(255, 205, 60),
+	Gems = Color3.fromRGB(110, 230, 255),
+}
+
+Config.DataStoreName = "SharksVsMinnows_v1"
+
+return Config
+]]></ProtectedString>
+       </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="RBX1">
+       <Properties>
+        <string name="Name">Remotes</string>
+        <ProtectedString name="Source"><![CDATA[--!strict
+-- One place that defines every remote. The server creates them; clients wait for them.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local EVENTS = { "UseAbility", "UseItem", "Notify", "Feed", "Effect", "Banner" }
+local FUNCTIONS = { "Shop", "RedeemCode" }
+
+local folder: Folder
+if RunService:IsServer() then
+	folder = Instance.new("Folder")
+	folder.Name = "Remotes"
+	for _, name in EVENTS do
+		local e = Instance.new("RemoteEvent")
+		e.Name = name
+		e.Parent = folder
+	end
+	for _, name in FUNCTIONS do
+		local f = Instance.new("RemoteFunction")
+		f.Name = name
+		f.Parent = folder
+	end
+	folder.Parent = ReplicatedStorage
+else
+	folder = ReplicatedStorage:WaitForChild("Remotes") :: Folder
+end
+
+local function event(name: string): RemoteEvent
+	return folder:WaitForChild(name) :: RemoteEvent
+end
+local function func(name: string): RemoteFunction
+	return folder:WaitForChild(name) :: RemoteFunction
+end
+
+return {
+	UseAbility = event("UseAbility"), -- client -> server
+	UseItem = event("UseItem"), -- client -> server (itemId)
+	Notify = event("Notify"), -- server -> client (text, color?)
+	Feed = event("Feed"), -- server -> all (killer, victim, kind)
+	Effect = event("Effect"), -- server -> client(s) (kind, data)
+	Banner = event("Banner"), -- server -> client(s) (title, subtitle, color)
+	Shop = func("Shop"), -- client -> server (action, id) -> (ok, message)
+	RedeemCode = func("RedeemCode"), -- client -> server (code) -> (ok, message)
+}
+]]></ProtectedString>
+       </Properties>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="ServerScriptService" referent="RBX11">
+   <Properties>
+    <string name="Name">ServerScriptService</string>
+   </Properties>
+    <Item class="Folder" referent="RBX10">
+     <Properties>
+      <string name="Name">Server</string>
+     </Properties>
+      <Item class="ModuleScript" referent="RBX4">
+       <Properties>
+        <string name="Name">Abilities</string>
+        <ProtectedString name="Source"><![CDATA[--!strict
+-- Server side of every ability (E) and consumable (1/2/3). The server owns cooldowns,
+-- item counts and anything that affects other players; clients only draw the extras.
+
+local Debris = game:GetService("Debris")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+
+local Config = require(ReplicatedStorage.Shared.Config)
+local Remotes = require(ReplicatedStorage.Shared.Remotes)
+local Entities = require(script.Parent.Entities)
+local PlayerData = require(script.Parent.PlayerData)
+
+type Entity = Entities.Entity
+
+local Abilities = {}
+
+local now = Entities.Now
+
+-- Set by the round loop: abilities only work while minnows are crossing.
+Abilities.Active = false
+
+local fxFolder = Instance.new("Folder")
+fxFolder.Name = "SvMEffects"
+fxFolder.Parent = workspace
+
+type Net = { Part: Part, Owner: Entity, Expires: number }
+local nets: { Net } = {}
+
+type Pool = { Center: Vector3, Radius: number, Expires: number, Part: Part }
+local pools: { Pool } = {}
+
+local function inWater(pos: Vector3): boolean
+	return math.abs(pos.X) < Config.SafeLine
+end
+Abilities.InWater = inWater
+
+local function equipped(e: Entity): string
+	if e.IsBot then
+		return (e.Bot and e.Bot.Ability) or Config.DefaultAbility[e.Role] or ""
+	end
+	local data = e.Player and PlayerData.Get(e.Player)
+	if data then
+		if e.Role == "Shark" then
+			return data.Equipped.Shark
+		elseif e.Role == "Minnow" then
+			return data.Equipped.Minnow
+		end
+	end
+	return ""
+end
+Abilities.Equipped = equipped
+
+local function aura(e: Entity, color: Color3, duration: number)
+	if e.Model then
+		Remotes.Effect:FireAllClients("Aura", { Model = e.Model, Color = color, Duration = duration })
+	end
+end
+
+local function burst(pos: Vector3, color: Color3, size: number)
+	Remotes.Effect:FireAllClients("Burst", { Position = pos, Color = color, Size = size })
+end
+
+local function bubble(e: Entity, duration: number, color: Color3, size: number)
+	local root = Entities.Root(e)
+	if not root then
+		return
+	end
+	local ball = Instance.new("Part")
+	ball.Name = "Bubble"
+	ball.Shape = Enum.PartType.Ball
+	ball.Size = Vector3.one * size
+	ball.Material = Enum.Material.ForceField
+	ball.Color = color
+	ball.CanCollide = false
+	ball.CanQuery = false
+	ball.CanTouch = false
+	ball.Massless = true
+	ball.CFrame = root.CFrame
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = root
+	weld.Part1 = ball
+	weld.Parent = ball
+	ball.Parent = e.Model
+	Debris:AddItem(ball, duration)
+end
+
+local function setReady(e: Entity, field: "AbilityReadyAt" | "ItemReadyAt", at: number)
+	(e :: any)[field] = at
+	if e.Player then
+		e.Player:SetAttribute(field, at)
+	end
+end
+
+-- Abilities ------------------------------------------------------------------------------
+
+local handlers: { [string]: (Entity, BasePart) -> () } = {}
+
+handlers.Dash = function(e, root)
+	Entities.AddEffect(e, 34, 1, 0.4)
+	aura(e, Config.Abilities.Dash.Color, 0.5)
+	burst(root.Position, Config.Abilities.Dash.Color, 4)
+end
+
+handlers.Bubble = function(e, _root)
+	e.ShieldUntil = now() + 2.5
+	if e.Player then
+		e.Player:SetAttribute("ShieldUntil", e.ShieldUntil)
+	end
+	bubble(e, 2.5, Config.Abilities.Bubble.Color, 7)
+end
+
+handlers.Ink = function(e, root)
+	local pos = root.Position
+	local cloud = Instance.new("Part")
+	cloud.Name = "InkCloud"
+	cloud.Anchored = true
+	cloud.CanCollide = false
+	cloud.CanQuery = false
+	cloud.CanTouch = false
+	cloud.Transparency = 1
+	cloud.Size = Vector3.one
+	cloud.Position = pos
+	local smoke = Instance.new("ParticleEmitter")
+	smoke.Texture = "rbxasset://textures/particles/smoke_main.dds"
+	smoke.Color = ColorSequence.new(Color3.fromRGB(30, 15, 50))
+	smoke.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 6), NumberSequenceKeypoint.new(1, 16) })
+	smoke.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(1, 1) })
+	smoke.Lifetime = NumberRange.new(2, 3)
+	smoke.Rate = 0
+	smoke.Speed = NumberRange.new(8, 14)
+	smoke.SpreadAngle = Vector2.new(180, 180)
+	smoke.Drag = 3
+	smoke.Parent = cloud
+	cloud.Parent = fxFolder
+	smoke:Emit(60)
+	Debris:AddItem(cloud, 4)
+
+	for _, shark in Entities.WithRole("Shark") do
+		local p = Entities.Position(shark)
+		if p and (p - pos).Magnitude < 18 then
+			Entities.AddEffect(shark, 0, 0.5, 2.5)
+			if shark.Player then
+				Remotes.Effect:FireClient(shark.Player, "Inked", { Duration = 1.8 })
+			end
+			if shark.Bot then
+				shark.Bot.ConfusedUntil = now() + 2
+			end
+		end
+	end
+end
+
+handlers.Riptide = function(e, _root)
+	Entities.AddEffect(e, 9, 1, 3)
+	aura(e, Config.Abilities.Riptide.Color, 3)
+end
+
+handlers.Lunge = function(e, root)
+	Entities.AddEffect(e, 42, 1, 0.4)
+	e.BiteBonus = 1.6
+	e.BiteBonusUntil = now() + 0.6
+	aura(e, Config.Abilities.Lunge.Color, 0.5)
+	burst(root.Position, Config.Abilities.Lunge.Color, 4)
+end
+
+handlers.Sonar = function(e, root)
+	burst(root.Position, Config.Abilities.Sonar.Color, 40)
+	if e.Player then
+		Remotes.Effect:FireClient(e.Player, "Sonar", { Duration = 4 })
+	end
+	for _, m in Entities.WithRole("Minnow") do
+		if m.Player then
+			Remotes.Notify:FireClient(m.Player, "📡 A shark pinged your location!", Config.Abilities.Sonar.Color)
+		end
+	end
+end
+
+handlers.Frenzy = function(e, _root)
+	Entities.AddEffect(e, 8, 1, 3.5)
+	e.BiteBonus = 1.5
+	e.BiteBonusUntil = now() + 3.5
+	aura(e, Config.Abilities.Frenzy.Color, 3.5)
+end
+
+handlers.Whirlpool = function(_e, root)
+	local center = Vector3.new(root.Position.X, 0.3, root.Position.Z)
+	local ring = Instance.new("Part")
+	ring.Name = "Whirlpool"
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Anchored = true
+	ring.CanCollide = false
+	ring.CanQuery = false
+	ring.CanTouch = false
+	ring.Material = Enum.Material.Neon
+	ring.Color = Config.Abilities.Whirlpool.Color
+	ring.Transparency = 0.55
+	ring.Size = Vector3.new(0.4, 4, 4)
+	ring.CFrame = CFrame.new(center) * CFrame.Angles(0, 0, math.rad(90))
+	ring.Parent = fxFolder
+	local radius = 20
+	TweenService:Create(ring, TweenInfo.new(0.5, Enum.EasingStyle.Back), { Size = Vector3.new(0.4, radius * 2, radius * 2) }):Play()
+	TweenService:Create(ring, TweenInfo.new(3, Enum.EasingStyle.Linear), { CFrame = ring.CFrame * CFrame.Angles(math.rad(720), 0, 0) }):Play()
+	Debris:AddItem(ring, 3)
+	table.insert(pools, { Center = center, Radius = radius, Expires = now() + 3, Part = ring })
+end
+
+local function bounds(e: Entity): (BasePart?, boolean)
+	if not Abilities.Active or not e.InRound or e.Role == "Lobby" then
+		return nil, false
+	end
+	local root = Entities.Root(e)
+	return root, root ~= nil
+end
+
+function Abilities.UseAbility(e: Entity): boolean
+	local root, ok = bounds(e)
+	if not ok or not root then
+		return false
+	end
+	local id = equipped(e)
+	local def = Config.Abilities[id]
+	if not def or def.Role ~= e.Role then
+		return false
+	end
+	local t = now()
+	if t < e.AbilityReadyAt then
+		return false
+	end
+	setReady(e, "AbilityReadyAt", t + def.Cooldown)
+	handlers[id](e, root)
+	return true
+end
+
+-- Consumables ----------------------------------------------------------------------------
+
+local itemHandlers: { [string]: (Entity, BasePart) -> () } = {}
+
+itemHandlers.Kelp = function(e, root)
+	Entities.AddEffect(e, 7, 1, 4)
+	aura(e, Config.Items.Kelp.Color, 4)
+	burst(root.Position, Config.Items.Kelp.Color, 5)
+end
+
+itemHandlers.Pearl = function(e, _root)
+	e.PearlUntil = now() + 8
+	if e.Player then
+		e.Player:SetAttribute("ShieldUntil", math.max(e.ShieldUntil, e.PearlUntil))
+	end
+	bubble(e, 8, Config.Items.Pearl.Color, 5.5)
+end
+
+itemHandlers.Net = function(e, root)
+	local pos = Vector3.new(root.Position.X, 0.25, root.Position.Z)
+	local net = Instance.new("Part")
+	net.Name = "Net"
+	net.Anchored = true
+	net.CanCollide = false
+	net.CanQuery = false
+	net.CanTouch = false
+	net.Size = Vector3.new(9, 0.3, 9)
+	net.CFrame = CFrame.new(pos)
+	net.Color = Config.Items.Net.Color
+	net.Material = Enum.Material.Fabric
+	net.Transparency = 0.35
+	local sel = Instance.new("SelectionBox")
+	sel.Adornee = net
+	sel.Color3 = Color3.fromRGB(120, 90, 50)
+	sel.LineThickness = 0.08
+	sel.Transparency = 0.2
+	sel.Parent = net
+	net.Parent = fxFolder
+	table.insert(nets, { Part = net, Owner = e, Expires = now() + 20 })
+end
+
+function Abilities.UseItem(e: Entity, itemId: string): boolean
+	local root, ok = bounds(e)
+	if not ok or not root then
+		return false
+	end
+	local def = Config.Items[itemId]
+	if not def then
+		return false
+	end
+	if def.Role ~= "Any" and def.Role ~= e.Role then
+		if e.Player then
+			Remotes.Notify:FireClient(e.Player, `{def.Name} is for {def.Role}s only.`, Color3.fromRGB(255, 120, 120))
+		end
+		return false
+	end
+	local t = now()
+	if t < e.ItemReadyAt then
+		return false
+	end
+	if e.Player then
+		local data = PlayerData.Get(e.Player)
+		if not data or (data.Items[itemId] or 0) <= 0 then
+			Remotes.Notify:FireClient(e.Player, `Out of {def.Name}! Buy more in the shop.`, Color3.fromRGB(255, 120, 120))
+			return false
+		end
+		PlayerData.Update(e.Player, function(d)
+			d.Items[itemId] -= 1
+		end)
+	end
+	setReady(e, "ItemReadyAt", t + Config.ItemCooldown)
+	itemHandlers[itemId](e, root)
+	return true
+end
+
+-- Returns true if a chomp on this minnow is blocked (and consumes a pearl if that's what blocked it).
+function Abilities.TryBlock(minnow: Entity): boolean
+	local t = now()
+	if minnow.ShieldUntil > t then
+		return true
+	end
+	if minnow.PearlUntil > t then
+		minnow.PearlUntil = 0
+		if minnow.Player then
+			minnow.Player:SetAttribute("ShieldUntil", minnow.ShieldUntil)
+		end
+		if minnow.Model then
+			for _, child in minnow.Model:GetChildren() do
+				if child.Name == "Bubble" then
+					child:Destroy()
+				end
+			end
+		end
+		local p = Entities.Position(minnow)
+		if p then
+			burst(p, Config.Items.Pearl.Color, 8)
+		end
+		return true
+	end
+	return false
+end
+
+-- Nets and whirlpools act on minnows that wander into them.
+function Abilities.Step()
+	local t = now()
+	for i = #nets, 1, -1 do
+		local net = nets[i]
+		local hit = false
+		if t < net.Expires then
+			for _, m in Entities.WithRole("Minnow") do
+				local p = Entities.Position(m)
+				if p and inWater(p) and (Vector3.new(p.X, 0, p.Z) - Vector3.new(net.Part.Position.X, 0, net.Part.Position.Z)).Magnitude < 4.8 then
+					m.RootedUntil = t + 1.5
+					if m.Player then
+						Remotes.Notify:FireClient(m.Player, "🕸️ Caught in a net!", Config.Items.Net.Color)
+					end
+					burst(p, Config.Items.Net.Color, 6)
+					hit = true
+					break
+				end
+			end
+		end
+		if hit or t >= net.Expires then
+			net.Part:Destroy()
+			table.remove(nets, i)
+		end
+	end
+
+	for i = #pools, 1, -1 do
+		local pool = pools[i]
+		if t >= pool.Expires then
+			table.remove(pools, i)
+			continue
+		end
+		for _, m in Entities.WithRole("Minnow") do
+			local p = Entities.Position(m)
+			if p and inWater(p) and (Vector3.new(p.X, 0, p.Z) - Vector3.new(pool.Center.X, 0, pool.Center.Z)).Magnitude < pool.Radius then
+				-- a short slow that keeps getting refreshed while they stay inside
+				local refreshed = false
+				for _, fx in m.Effects do
+					if fx.Mult == 0.55 and fx.Add == 0 then
+						fx.Until = t + 0.3
+						refreshed = true
+					end
+				end
+				if not refreshed then
+					Entities.AddEffect(m, 0, 0.55, 0.3)
+				end
+			end
+		end
+	end
+end
+
+function Abilities.Clear()
+	for _, net in nets do
+		net.Part:Destroy()
+	end
+	table.clear(nets)
+	for _, pool in pools do
+		pool.Part:Destroy()
+	end
+	table.clear(pools)
+	fxFolder:ClearAllChildren()
+end
+
+return Abilities
+]]></ProtectedString>
+       </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="RBX5">
+       <Properties>
+        <string name="Name">Bots</string>
+        <ProtectedString name="Source"><![CDATA[--!strict
+-- Simple AI swimmers so a round is fun with one or two people in the server.
+-- Minnow bots head for the far shore and swerve away from sharks; shark bots chase the
+-- closest minnow in the water. Shark bots are tuned a little slower than real players.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage.Shared.Config)
+local Entities = require(script.Parent.Entities)
+local Abilities = require(script.Parent.Abilities)
+
+type Entity = Entities.Entity
+
+local Bots = {}
+
+local NAMES = {
+	"Gill", "Splash", "Reef", "Ripple", "Pebble", "Mako", "Tuna", "Scales", "Pike", "Wave",
+	"Kelpie", "Driftwood", "Barnacle", "Sandbar", "Guppy", "Minnie", "Seafoam", "Tide",
+}
+
+local SKIN = {
+	Color3.fromRGB(255, 220, 180), Color3.fromRGB(234, 184, 146), Color3.fromRGB(198, 140, 100),
+	Color3.fromRGB(141, 95, 65), Color3.fromRGB(95, 60, 40),
+}
+local SHIRT = {
+	Color3.fromRGB(230, 70, 70), Color3.fromRGB(60, 140, 230), Color3.fromRGB(80, 190, 110), Color3.fromRGB(250, 200, 60),
+	Color3.fromRGB(170, 90, 220), Color3.fromRGB(240, 240, 240), Color3.fromRGB(40, 40, 50),
+}
+
+-- Roblox's default R15 animations
+local ANIM: { [string]: string } = {
+	Idle = "rbxassetid://507766666",
+	Run = "rbxassetid://913376220",
+}
+
+local folder = Instance.new("Folder")
+folder.Name = "SvMBots"
+folder.Parent = workspace
+
+local bots: { Entity } = {}
+local used: { [string]: boolean } = {}
+
+local now = Entities.Now
+local SAFE = Config.SafeLine
+
+local function pickName(): string
+	for _ = 1, 30 do
+		local n = NAMES[math.random(1, #NAMES)]
+		if not used[n] then
+			used[n] = true
+			return n
+		end
+	end
+	return "Fish" .. math.random(100, 999)
+end
+
+local function makeModel(name: string): Model
+	local desc = Instance.new("HumanoidDescription")
+	local skin = SKIN[math.random(1, #SKIN)]
+	local shirt = SHIRT[math.random(1, #SHIRT)]
+	local pants = SHIRT[math.random(1, #SHIRT)]:Lerp(Color3.new(0, 0, 0), 0.4)
+	desc.HeadColor = skin
+	desc.LeftArmColor = skin
+	desc.RightArmColor = skin
+	desc.TorsoColor = shirt
+	desc.LeftLegColor = pants
+	desc.RightLegColor = pants
+	local model = Players:CreateHumanoidModelFromDescription(desc, Enum.HumanoidRigType.R15)
+	model.Name = name
+	local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid
+	humanoid.DisplayName = "🤖 " .. name
+	humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.Viewer
+	humanoid.NameDisplayDistance = 60
+	humanoid.BreakJointsOnDeath = false
+	return model
+end
+
+local function setupAnimations(e: Entity, humanoid: Humanoid)
+	local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator")
+	animator.Parent = humanoid
+	local tracks = {}
+	for key, id in ANIM do
+		local anim = Instance.new("Animation")
+		anim.AnimationId = id
+		local ok, track = pcall(function()
+			return animator:LoadAnimation(anim)
+		end)
+		if ok and track then
+			track.Looped = true
+			tracks[key] = track
+		end
+	end
+	e.Bot.Tracks = tracks
+	e.Bot.Playing = ""
+end
+
+local function animate(e: Entity, root: BasePart)
+	local tracks = e.Bot.Tracks
+	if not tracks then
+		return
+	end
+	local v = root.AssemblyLinearVelocity
+	local moving = Vector3.new(v.X, 0, v.Z).Magnitude > 2
+	local want = if moving then "Run" else "Idle"
+	if e.Bot.Playing ~= want then
+		local old = tracks[e.Bot.Playing]
+		if old then
+			old:Stop(0.2)
+		end
+		local track = tracks[want]
+		if track then
+			track:Play(0.2)
+			if want == "Run" then
+				track:AdjustSpeed(1.25)
+			end
+		end
+		e.Bot.Playing = want
+	end
+end
+
+function Bots.Spawn(count: number): { Entity }
+	local made = {}
+	for _ = 1, count do
+		local name = pickName()
+		local model = makeModel(name)
+		local e = Entities.AddBot(name, model)
+		e.Bot = {
+			SpeedFactor = 1,
+			Lane = 0,
+			NextThink = 0,
+			StuckSince = 0,
+			DodgeUntil = 0,
+			DodgeDir = 1,
+			ConfusedUntil = 0,
+			Ability = "",
+			Reaction = math.random(15, 35) / 100,
+			Skill = math.random(70, 100) / 100,
+		}
+		model:PivotTo(CFrame.new(math.random(-20, 20), 5, math.random(-20, 20)))
+		model.Parent = folder
+		local root = model:FindFirstChild("HumanoidRootPart") :: BasePart
+		root:SetNetworkOwner(nil)
+		Entities.AttachModel(e, model)
+		local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid
+		setupAnimations(e, humanoid)
+		table.insert(bots, e)
+		table.insert(made, e)
+	end
+	return made
+end
+
+-- Called when a bot's role changes so it picks a matching ability and pace.
+function Bots.Configure(e: Entity)
+	if not e.Bot then
+		return
+	end
+	if e.Role == "Shark" then
+		e.Bot.Ability = if math.random() < 0.3 then "Frenzy" else "Lunge"
+		e.Bot.SpeedFactor = 0.84 + 0.06 * e.Bot.Skill
+	else
+		e.Bot.Ability = if math.random() < 0.5 then "Bubble" else "Dash"
+		e.Bot.SpeedFactor = 0.9 + 0.08 * e.Bot.Skill
+	end
+	e.Bot.Lane = math.random(-Config.ArenaHalfWidth + 10, Config.ArenaHalfWidth - 10)
+end
+
+function Bots.NewCrossing()
+	for _, e in bots do
+		e.Bot.Lane = math.clamp(e.Bot.Lane + math.random(-25, 25), -Config.ArenaHalfWidth + 10, Config.ArenaHalfWidth - 10)
+	end
+end
+
+function Bots.Clear()
+	for _, e in bots do
+		Entities.Remove(e)
+		if e.Model then
+			e.Model:Destroy()
+		end
+	end
+	table.clear(bots)
+	table.clear(used)
+end
+
+function Bots.Count(): number
+	return #bots
+end
+
+local function flat(v: Vector3): Vector3
+	return Vector3.new(v.X, 0, v.Z)
+end
+
+local function thinkMinnow(e: Entity, root: BasePart, humanoid: Humanoid, dir: number, crossing: boolean)
+	local pos = root.Position
+	if not crossing or e.SafeThisCrossing then
+		-- mill around on the beach
+		local idle = Vector3.new(dir * (SAFE + 15), 0, e.Bot.Lane)
+		if not crossing then
+			idle = Vector3.new(math.sign(pos.X) * (SAFE + 15), 0, e.Bot.Lane)
+		end
+		if flat(pos - idle).Magnitude > 6 then
+			humanoid:MoveTo(idle)
+		end
+		return
+	end
+
+	local goal = Vector3.new(dir * (SAFE + 16), 0, e.Bot.Lane)
+	local toGoal = flat(goal - pos)
+	local desire = if toGoal.Magnitude > 0 then toGoal.Unit else Vector3.zero
+
+	local nearest, nearestDist = nil :: Vector3?, math.huge
+	for _, s in Entities.WithRole("Shark") do
+		local sp = Entities.Position(s)
+		if sp then
+			local d = flat(sp - pos).Magnitude
+			if d < nearestDist then
+				nearest, nearestDist = sp, d
+			end
+		end
+	end
+
+	local t = now()
+	if nearest and nearestDist < 30 then
+		local away = flat(pos - nearest)
+		away = if away.Magnitude > 0 then away.Unit else Vector3.xAxis
+		local weight = (1 - nearestDist / 30) * 1.8 * e.Bot.Skill
+		-- swerve sideways rather than running straight back
+		local side = Vector3.new(-away.Z, 0, away.X)
+		if side:Dot(desire) < 0 then
+			side = -side
+		end
+		desire = (desire + away * weight * 0.6 + side * weight).Unit
+		if nearestDist < 9 then
+			Abilities.UseAbility(e)
+		end
+	end
+
+	-- unstick from rocks: if we're barely moving, sidestep for a moment
+	local speed = flat(root.AssemblyLinearVelocity).Magnitude
+	if speed < 3 and humanoid.WalkSpeed > 5 then
+		if e.Bot.StuckSince == 0 then
+			e.Bot.StuckSince = t
+		elseif t - e.Bot.StuckSince > 0.7 then
+			e.Bot.DodgeUntil = t + 1
+			e.Bot.DodgeDir = if math.random() < 0.5 then -1 else 1
+			e.Bot.StuckSince = 0
+		end
+	else
+		e.Bot.StuckSince = 0
+	end
+	if t < e.Bot.DodgeUntil then
+		desire = Vector3.new(0, 0, e.Bot.DodgeDir) + desire * 0.2
+	end
+
+	humanoid:MoveTo(pos + desire * 12)
+end
+
+local function thinkShark(e: Entity, root: BasePart, humanoid: Humanoid, dir: number, crossing: boolean)
+	local pos = root.Position
+	local t = now()
+	if t < e.Bot.ConfusedUntil then
+		humanoid:MoveTo(pos + Vector3.new(math.random(-10, 10), 0, math.random(-10, 10)))
+		return
+	end
+
+	local best, bestDist, bestVel = nil :: Vector3?, math.huge, Vector3.zero
+	for _, m in Entities.WithRole("Minnow") do
+		local r = Entities.Root(m)
+		if r and Abilities.InWater(r.Position) then
+			local d = flat(r.Position - pos).Magnitude
+			if d < bestDist then
+				best, bestDist, bestVel = r.Position, d, r.AssemblyLinearVelocity
+			end
+		end
+	end
+
+	if best and crossing then
+		local lead = math.clamp(bestDist / 30, 0.1, 0.6) * e.Bot.Skill
+		local target = best + flat(bestVel) * lead
+		target = Vector3.new(math.clamp(target.X, -SAFE + 2, SAFE - 2), 0, target.Z)
+		humanoid:MoveTo(target)
+		if bestDist < 11 then
+			Abilities.UseAbility(e)
+		end
+	else
+		-- wait in the middle of the lane the minnows are coming from
+		local guard = Vector3.new(-dir * 25, 0, math.clamp(e.Bot.Lane * 0.6, -40, 40))
+		if flat(guard - pos).Magnitude > 5 then
+			humanoid:MoveTo(guard)
+		end
+	end
+end
+
+-- dir: the direction minnows are crossing this time (1 = toward east beach).
+function Bots.Step(crossing: boolean, dir: number)
+	local t = now()
+	for _, e in bots do
+		local root = Entities.Root(e)
+		local humanoid = Entities.Humanoid(e)
+		if not root or not humanoid then
+			continue
+		end
+		animate(e, root)
+		if not e.InRound or e.Frozen or t < e.Bot.NextThink then
+			continue
+		end
+		e.Bot.NextThink = t + e.Bot.Reaction * 0.6
+		if e.Role == "Minnow" then
+			thinkMinnow(e, root, humanoid, dir, crossing)
+		elseif e.Role == "Shark" then
+			thinkShark(e, root, humanoid, dir, crossing)
+		end
+	end
+end
+
+return Bots
+]]></ProtectedString>
+       </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="RBX6">
+       <Properties>
+        <string name="Name">Entities</string>
+        <ProtectedString name="Source"><![CDATA[--!strict
+-- A participant is either a real player or a bot. The round code treats both the same way
+-- through this module: roles, speed effects, shields, appearance and per-round stats.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage.Shared.Config)
+
+export type Role = "Lobby" | "Minnow" | "Shark"
+
+export type Effect = { Add: number, Mult: number, Until: number }
+
+export type Entity = {
+	Id: string,
+	Name: string,
+	Player: Player?,
+	IsBot: boolean,
+	Model: Model?,
+	Role: Role,
+	Effects: { Effect },
+	Frozen: boolean,
+	ShieldUntil: number, -- bubble shield: any number of chomps bounce
+	PearlUntil: number, -- pearl: blocks exactly one chomp
+	RootedUntil: number, -- caught in a net
+	SharkSince: number,
+	BiteBonus: number, -- extra tag range (Frenzy)
+	BiteBonusUntil: number,
+	AbilityReadyAt: number,
+	ItemReadyAt: number,
+	SafeThisCrossing: boolean,
+	RoundTags: number,
+	RoundCrossings: number,
+	InRound: boolean,
+	Bot: any, -- AI state for bots
+}
+
+local Entities = {}
+
+local list: { Entity } = {}
+local byPlayer: { [Player]: Entity } = {}
+
+local function now(): number
+	return workspace:GetServerTimeNow()
+end
+Entities.Now = now
+
+local function new(name: string, player: Player?, isBot: boolean): Entity
+	return {
+		Id = if player then "p" .. player.UserId else "b" .. name,
+		Name = name,
+		Player = player,
+		IsBot = isBot,
+		Model = nil,
+		Role = "Lobby",
+		Effects = {},
+		Frozen = false,
+		ShieldUntil = 0,
+		PearlUntil = 0,
+		RootedUntil = 0,
+		SharkSince = 0,
+		BiteBonus = 0,
+		BiteBonusUntil = 0,
+		AbilityReadyAt = 0,
+		ItemReadyAt = 0,
+		SafeThisCrossing = false,
+		RoundTags = 0,
+		RoundCrossings = 0,
+		InRound = false,
+		Bot = nil,
+	}
+end
+
+function Entities.AddPlayer(player: Player): Entity
+	local e = new(player.DisplayName, player, false)
+	byPlayer[player] = e
+	table.insert(list, e)
+	player:SetAttribute("Role", "Lobby")
+	return e
+end
+
+function Entities.AddBot(name: string, model: Model): Entity
+	local e = new(name, nil, true)
+	e.Model = model
+	table.insert(list, e)
+	model:SetAttribute("Role", "Lobby")
+	model:SetAttribute("IsBot", true)
+	return e
+end
+
+function Entities.Remove(e: Entity)
+	local i = table.find(list, e)
+	if i then
+		table.remove(list, i)
+	end
+	if e.Player then
+		byPlayer[e.Player] = nil
+	end
+end
+
+function Entities.Get(player: Player): Entity?
+	return byPlayer[player]
+end
+
+function Entities.All(): { Entity }
+	return list
+end
+
+function Entities.WithRole(role: Role): { Entity }
+	local out = {}
+	for _, e in list do
+		if e.Role == role then
+			table.insert(out, e)
+		end
+	end
+	return out
+end
+
+function Entities.Humanoid(e: Entity): Humanoid?
+	local model = e.Model
+	if not model then
+		return nil
+	end
+	local h = model:FindFirstChildOfClass("Humanoid")
+	if h and h.Health > 0 then
+		return h
+	end
+	return nil
+end
+
+function Entities.Root(e: Entity): BasePart?
+	local model = e.Model
+	if not model or not Entities.Humanoid(e) then
+		return nil
+	end
+	return model:FindFirstChild("HumanoidRootPart") :: BasePart?
+end
+
+function Entities.Position(e: Entity): Vector3?
+	local root = Entities.Root(e)
+	return if root then root.Position else nil
+end
+
+function Entities.Teleport(e: Entity, cf: CFrame)
+	local model = e.Model
+	if model and model.PrimaryPart then
+		model:PivotTo(cf)
+		local root = model:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if root then
+			root.AssemblyLinearVelocity = Vector3.zero
+		end
+	end
+end
+
+-- Speed -------------------------------------------------------------------------------
+
+function Entities.AddEffect(e: Entity, add: number, mult: number, duration: number)
+	table.insert(e.Effects, { Add = add, Mult = mult, Until = now() + duration })
+end
+
+local function baseSpeed(e: Entity): number
+	if e.Role == "Shark" then
+		return Config.SharkSpeed
+	elseif e.Role == "Minnow" then
+		return Config.MinnowSpeed
+	end
+	return Config.LobbySpeed
+end
+
+function Entities.UpdateMovement()
+	local t = now()
+	for _, e in list do
+		local h = Entities.Humanoid(e)
+		if not h then
+			continue
+		end
+		local add, mult = 0, 1
+		for i = #e.Effects, 1, -1 do
+			local fx = e.Effects[i]
+			if fx.Until <= t then
+				table.remove(e.Effects, i)
+			else
+				add += fx.Add
+				mult *= fx.Mult
+			end
+		end
+		local speed = (baseSpeed(e) + add) * mult
+		if e.Frozen or e.RootedUntil > t then
+			speed = 0
+		end
+		if e.Bot then
+			speed *= e.Bot.SpeedFactor or 1
+		end
+		if math.abs(h.WalkSpeed - speed) > 0.05 then
+			h.WalkSpeed = speed
+		end
+		local canJump = not (e.Frozen or e.RootedUntil > t)
+		if h.UseJumpPower then
+			h.UseJumpPower = false
+		end
+		local jump = if canJump then 7.2 else 0
+		if h.JumpHeight ~= jump then
+			h.JumpHeight = jump
+		end
+	end
+end
+
+-- Roles and appearance ---------------------------------------------------------------
+
+local function setCollisionGroup(model: Model, group: string)
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.CollisionGroup = group
+		end
+	end
+end
+
+local function clearDecor(model: Model)
+	local old = model:FindFirstChild("SvMDecor")
+	if old then
+		old:Destroy()
+	end
+end
+
+local function weldTo(anchor: BasePart, p: BasePart, offset: CFrame)
+	p.Anchored = false
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.Massless = true
+	p.CFrame = anchor.CFrame * offset
+	local w = Instance.new("WeldConstraint")
+	w.Part0 = anchor
+	w.Part1 = p
+	w.Parent = p
+end
+
+local function decorate(e: Entity)
+	local model = e.Model
+	if not model then
+		return
+	end
+	clearDecor(model)
+	local decor = Instance.new("Folder")
+	decor.Name = "SvMDecor"
+
+	local torso = (model:FindFirstChild("UpperTorso") or model:FindFirstChild("Torso")) :: BasePart?
+	local lower = (model:FindFirstChild("LowerTorso") or torso) :: BasePart?
+
+	if e.Role == "Shark" then
+		local hl = Instance.new("Highlight")
+		hl.FillColor = Config.Colors.Shark
+		hl.FillTransparency = 0.45
+		hl.OutlineColor = Config.Colors.SharkOutline
+		hl.OutlineTransparency = 0
+		hl.DepthMode = Enum.HighlightDepthMode.Occluded
+		hl.Adornee = model
+		hl.Parent = decor
+		if torso then
+			local fin = Instance.new("WedgePart")
+			fin.Name = "DorsalFin"
+			fin.Size = Vector3.new(0.35, 2.4, 2.2)
+			fin.Color = Config.Colors.Shark
+			fin.Material = Enum.Material.SmoothPlastic
+			weldTo(torso, fin, CFrame.new(0, 1.2, 0.95))
+			fin.Parent = decor
+		end
+	elseif e.Role == "Minnow" then
+		local hl = Instance.new("Highlight")
+		hl.FillColor = Config.Colors.Minnow
+		hl.FillTransparency = 0.7
+		hl.OutlineColor = Color3.new(1, 1, 1)
+		hl.OutlineTransparency = 0.3
+		hl.DepthMode = Enum.HighlightDepthMode.Occluded
+		hl.Adornee = model
+		hl.Parent = decor
+		if lower then
+			local tail = Instance.new("WedgePart")
+			tail.Name = "TailFin"
+			tail.Size = Vector3.new(0.3, 1.4, 1.2)
+			tail.Color = Config.Colors.Minnow
+			tail.Material = Enum.Material.SmoothPlastic
+			weldTo(lower, tail, CFrame.new(0, 0.1, 0.9) * CFrame.Angles(math.rad(-90), 0, 0))
+			tail.Parent = decor
+		end
+	end
+	decor.Parent = model
+end
+
+function Entities.SetRole(e: Entity, role: Role)
+	e.Role = role
+	if role == "Shark" then
+		e.SharkSince = now()
+	end
+	if e.Player then
+		e.Player:SetAttribute("Role", role)
+	end
+	local model = e.Model
+	if model then
+		model:SetAttribute("Role", role)
+		setCollisionGroup(model, if role == "Shark" then "Sharks" else "Default")
+		decorate(e)
+	end
+	-- A new role starts with a fresh ability.
+	e.AbilityReadyAt = 0
+end
+
+-- Called whenever a new character model appears for an entity.
+function Entities.AttachModel(e: Entity, model: Model)
+	e.Model = model
+	e.Effects = {}
+	e.Frozen = false
+	model:SetAttribute("Role", e.Role)
+	model.DescendantAdded:Connect(function(d)
+		if d:IsA("BasePart") and e.Model == model then
+			d.CollisionGroup = if e.Role == "Shark" then "Sharks" else "Default"
+		end
+	end)
+	setCollisionGroup(model, if e.Role == "Shark" then "Sharks" else "Default")
+	decorate(e)
+end
+
+function Entities.ApplyTrail(e: Entity, trailId: string)
+	local model = e.Model
+	if not model then
+		return
+	end
+	local root = model:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if not root then
+		return
+	end
+	local old = root:FindFirstChild("SvMTrail")
+	if old then
+		old:Destroy()
+	end
+	for _, name in { "SvMTrailA0", "SvMTrailA1" } do
+		local a = root:FindFirstChild(name)
+		if a then
+			a:Destroy()
+		end
+	end
+	local def = Config.Trails[trailId]
+	if not def then
+		return
+	end
+	local a0 = Instance.new("Attachment")
+	a0.Name = "SvMTrailA0"
+	a0.Position = Vector3.new(0, 0.8, 0.4)
+	a0.Parent = root
+	local a1 = Instance.new("Attachment")
+	a1.Name = "SvMTrailA1"
+	a1.Position = Vector3.new(0, -0.8, 0.4)
+	a1.Parent = root
+	local keys = {}
+	for i, c in def.Colors do
+		table.insert(keys, ColorSequenceKeypoint.new(if #def.Colors == 1 then 0 else (i - 1) / (#def.Colors - 1), c))
+	end
+	if #keys == 1 then
+		table.insert(keys, ColorSequenceKeypoint.new(1, def.Colors[1]))
+	end
+	local trail = Instance.new("Trail")
+	trail.Name = "SvMTrail"
+	trail.Attachment0 = a0
+	trail.Attachment1 = a1
+	trail.Color = ColorSequence.new(keys)
+	trail.Lifetime = 0.6
+	trail.LightEmission = 0.6
+	trail.Transparency = NumberSequence.new(0.2, 1)
+	trail.FaceCamera = true
+	trail.Parent = root
+end
+
+function Entities.ResetRoundState(e: Entity)
+	e.Effects = {}
+	e.Frozen = false
+	e.ShieldUntil = 0
+	e.PearlUntil = 0
+	e.RootedUntil = 0
+	e.BiteBonus = 0
+	e.BiteBonusUntil = 0
+	e.AbilityReadyAt = 0
+	e.ItemReadyAt = 0
+	e.SafeThisCrossing = false
+	e.RoundTags = 0
+	e.RoundCrossings = 0
+	if e.Player then
+		e.Player:SetAttribute("AbilityReadyAt", 0)
+		e.Player:SetAttribute("ItemReadyAt", 0)
+		e.Player:SetAttribute("ShieldUntil", 0)
+	end
+end
+
+function Entities.PlayerList(): { Player }
+	local out = {}
+	for _, p in Players:GetPlayers() do
+		if byPlayer[p] then
+			table.insert(out, p)
+		end
+	end
+	return out
+end
+
+return Entities
+]]></ProtectedString>
+       </Properties>
+      </Item>
+      <Item class="Script" referent="RBX7">
+       <Properties>
+        <string name="Name">Main</string>
+        <ProtectedString name="Source"><![CDATA[--!strict
+-- Sharks Vs Minnows: the round loop.
+--
+--   Intermission -> pick sharks -> [Ready -> Crossing] x N -> Results -> back to the lobby
+--
+-- Minnows start on the west beach and must reach the opposite beach before the timer runs out.
+-- A minnow who gets chomped, or who doesn't make it across in time, becomes a shark.
+-- The round ends when every minnow is gone, when only one is left (the champion), or when
+-- the survivors make it through every crossing.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local Config = require(ReplicatedStorage.Shared.Config)
+local Remotes = require(ReplicatedStorage.Shared.Remotes)
+local MapBuilder = require(script.Parent.MapBuilder)
+local PlayerData = require(script.Parent.PlayerData)
+local Entities = require(script.Parent.Entities)
+local Abilities = require(script.Parent.Abilities)
+local Bots = require(script.Parent.Bots)
+
+type Entity = Entities.Entity
+
+local now = Entities.Now
+local SAFE = Config.SafeLine
+
+Players.RespawnTime = 3
+Players.CharacterAutoLoads = true
+
+local map = MapBuilder.Build()
+PlayerData.Init()
+
+-- Shared state the client reads from ReplicatedStorage attributes ------------------------
+
+local function setState(fields: { [string]: any })
+	for k, v in fields do
+		ReplicatedStorage:SetAttribute(k, v)
+	end
+end
+
+setState({
+	Phase = "Waiting", PhaseEndsAt = 0, Crossing = 0, MaxCrossings = Config.MaxCrossings,
+	Direction = 1, MinnowsLeft = 0, SharksCount = 0, Status = "Waiting for players",
+})
+
+local function setGates(closed: boolean)
+	for _, gate in map.Gates do
+		gate.CanCollide = closed
+		gate.Transparency = if closed then 0.2 else 1
+	end
+end
+setGates(true)
+
+local function banner(target: Player?, title: string, subtitle: string, color: Color3)
+	if target then
+		Remotes.Banner:FireClient(target, title, subtitle, color)
+	else
+		Remotes.Banner:FireAllClients(title, subtitle, color)
+	end
+end
+
+local function notify(e: Entity, text: string, color: Color3?)
+	if e.Player then
+		Remotes.Notify:FireClient(e.Player, text, color)
+	end
+end
+
+local function reward(e: Entity, coins: number, reason: string)
+	if e.Player and coins > 0 then
+		PlayerData.AddCoins(e.Player, coins)
+		notify(e, `+{coins} 🪙  {reason}`, Config.Colors.Coins)
+	end
+end
+
+-- Players -------------------------------------------------------------------------------------
+
+local roundRunning = false
+local startingMinnows = 0
+local lastSharks: { [string]: boolean } = {}
+
+local function onCharacter(player: Player, character: Model)
+	local e = Entities.Get(player)
+	if not e then
+		return
+	end
+	-- A new body means any round in progress is over for this player.
+	if e.InRound then
+		e.InRound = false
+	end
+	if e.Role ~= "Lobby" then
+		Entities.SetRole(e, "Lobby")
+	end
+	Entities.AttachModel(e, character)
+	local data = PlayerData.Get(player)
+	if data and data.Trail ~= "" then
+		task.defer(Entities.ApplyTrail, e, data.Trail)
+	end
+	local humanoid = character:WaitForChild("Humanoid") :: Humanoid
+	humanoid.Died:Connect(function()
+		if e.InRound and e.Model == character then
+			e.InRound = false
+			Entities.SetRole(e, "Lobby")
+			notify(e, "You're out of the round. Next round starts soon!", Color3.fromRGB(255, 150, 150))
+		end
+	end)
+end
+
+local function onPlayerAdded(player: Player)
+	Entities.AddPlayer(player)
+	player.CharacterAdded:Connect(function(character)
+		onCharacter(player, character)
+	end)
+	if player.Character then
+		onCharacter(player, player.Character)
+	end
+	PlayerData.Load(player)
+end
+
+Players.PlayerAdded:Connect(onPlayerAdded)
+for _, p in Players:GetPlayers() do
+	task.spawn(onPlayerAdded, p)
+end
+
+Players.PlayerRemoving:Connect(function(player)
+	local e = Entities.Get(player)
+	if e then
+		Entities.Remove(e)
+	end
+	PlayerData.Release(player)
+end)
+
+-- Remotes -----------------------------------------------------------------------------------
+
+Remotes.UseAbility.OnServerEvent:Connect(function(player)
+	local e = Entities.Get(player)
+	if e then
+		Abilities.UseAbility(e)
+	end
+end)
+
+Remotes.UseItem.OnServerEvent:Connect(function(player, itemId)
+	local e = Entities.Get(player)
+	if e and typeof(itemId) == "string" then
+		Abilities.UseItem(e, itemId)
+	end
+end)
+
+Remotes.Shop.OnServerInvoke = function(player: Player, action: any, id: any): (boolean, string)
+	if typeof(action) ~= "string" or typeof(id) ~= "string" then
+		return false, "Bad request"
+	end
+	local data = PlayerData.Get(player)
+	if not data then
+		return false, "Your data is still loading"
+	end
+
+	if action == "BuyAbility" then
+		local def = Config.Abilities[id]
+		if not def then
+			return false, "Unknown ability"
+		end
+		if data.OwnedAbilities[id] then
+			return false, "Already owned"
+		end
+		if data.Coins < def.Price then
+			return false, "Not enough coins"
+		end
+		PlayerData.Update(player, function(d)
+			d.Coins -= def.Price
+			d.OwnedAbilities[id] = true
+			if def.Role == "Shark" then
+				d.Equipped.Shark = id
+			else
+				d.Equipped.Minnow = id
+			end
+		end)
+		return true, `Unlocked {def.Name}!`
+	elseif action == "EquipAbility" then
+		local def = Config.Abilities[id]
+		if not def or not data.OwnedAbilities[id] then
+			return false, "You don't own that"
+		end
+		PlayerData.Update(player, function(d)
+			if def.Role == "Shark" then
+				d.Equipped.Shark = id
+			else
+				d.Equipped.Minnow = id
+			end
+		end)
+		return true, `Equipped {def.Name}`
+	elseif action == "BuyItem" then
+		local def = Config.Items[id]
+		if not def then
+			return false, "Unknown item"
+		end
+		if data.Coins < def.Price then
+			return false, "Not enough coins"
+		end
+		PlayerData.Update(player, function(d)
+			d.Coins -= def.Price
+			d.Items[id] = (d.Items[id] or 0) + 1
+		end)
+		return true, `Bought {def.Name}`
+	elseif action == "BuyTrail" then
+		local def = Config.Trails[id]
+		if not def then
+			return false, "Unknown trail"
+		end
+		if data.OwnedTrails[id] then
+			return false, "Already owned"
+		end
+		if data.Gems < def.Price then
+			return false, "Not enough gems"
+		end
+		PlayerData.Update(player, function(d)
+			d.Gems -= def.Price
+			d.OwnedTrails[id] = true
+			d.Trail = id
+		end)
+		local e = Entities.Get(player)
+		if e then
+			Entities.ApplyTrail(e, id)
+		end
+		return true, `Unlocked the {def.Name} trail!`
+	elseif action == "EquipTrail" then
+		if id ~= "" and not data.OwnedTrails[id] then
+			return false, "You don't own that"
+		end
+		PlayerData.Update(player, function(d)
+			d.Trail = id
+		end)
+		local e = Entities.Get(player)
+		if e then
+			Entities.ApplyTrail(e, id)
+		end
+		return true, if id == "" then "Trail removed" else "Trail equipped"
+	end
+	return false, "Unknown action"
+end
+
+Remotes.RedeemCode.OnServerInvoke = function(player: Player, code: any): (boolean, string)
+	if typeof(code) ~= "string" or #code > 40 then
+		return false, "Invalid code"
+	end
+	local key = string.upper((string.gsub(code, "%s", "")))
+	local def = Config.Codes[key]
+	local data = PlayerData.Get(player)
+	if not def then
+		return false, "That code doesn't exist"
+	end
+	if not data then
+		return false, "Your data is still loading"
+	end
+	if data.Codes[key] then
+		return false, "Already redeemed"
+	end
+	local parts = {}
+	PlayerData.Update(player, function(d)
+		d.Codes[key] = true
+		if def.Coins then
+			d.Coins += def.Coins
+			table.insert(parts, `{def.Coins} coins`)
+		end
+		if def.Gems then
+			d.Gems += def.Gems
+			table.insert(parts, `{def.Gems} gems`)
+		end
+		if def.Items then
+			for itemId, n in def.Items do
+				d.Items[itemId] = (d.Items[itemId] or 0) + n
+				local item = Config.Items[itemId]
+				table.insert(parts, `{n}x {if item then item.Name else itemId}`)
+			end
+		end
+	end)
+	return true, "Redeemed: " .. table.concat(parts, ", ")
+end
+
+-- Round helpers -----------------------------------------------------------------------------
+
+local direction = 1 -- which way the minnows are heading this crossing
+local phase = "Waiting"
+
+local function participants(): { Entity }
+	local out = {}
+	for _, e in Entities.All() do
+		if e.InRound then
+			table.insert(out, e)
+		end
+	end
+	return out
+end
+
+local function countRole(role: Entities.Role): number
+	local n = 0
+	for _, e in Entities.All() do
+		if e.InRound and e.Role == role then
+			n += 1
+		end
+	end
+	return n
+end
+
+local function refreshCounts()
+	setState({ MinnowsLeft = countRole("Minnow"), SharksCount = countRole("Shark") })
+end
+
+local function realPlayersInRound(): number
+	local n = 0
+	for _, e in Entities.All() do
+		if e.InRound and not e.IsBot then
+			n += 1
+		end
+	end
+	return n
+end
+
+local function becomeShark(e: Entity, how: string, by: Entity?)
+	Entities.SetRole(e, "Shark")
+	Bots.Configure(e)
+	e.SafeThisCrossing = false
+	if by then
+		banner(e.Player, "CHOMPED!", `{by.Name} got you. You're a shark now — get them back!`, Config.Colors.SharkOutline)
+	else
+		banner(e.Player, "TOO SLOW!", "You didn't make it across. You're a shark now!", Config.Colors.SharkOutline)
+	end
+	Remotes.Feed:FireAllClients(if by then by.Name else "🌊", e.Name, how)
+	refreshCounts()
+end
+
+local blockedAt: { [Entity]: number } = {}
+
+local function tryTags()
+	local t = now()
+	local sharks = Entities.WithRole("Shark")
+	for _, m in Entities.WithRole("Minnow") do
+		if not m.InRound then
+			continue
+		end
+		-- the beach is the only safe place, even for minnows who already crossed
+		local mr = Entities.Root(m)
+		if not mr or not Abilities.InWater(mr.Position) then
+			continue
+		end
+		for _, s in sharks do
+			if not s.InRound or t - s.SharkSince < Config.TagGrace then
+				continue
+			end
+			local sr = Entities.Root(s)
+			if not sr then
+				continue
+			end
+			local reach = Config.TagRange + (if s.BiteBonusUntil > t then s.BiteBonus else 0)
+			if (sr.Position - mr.Position).Magnitude > reach then
+				continue
+			end
+			if Abilities.TryBlock(m) then
+				if t - (blockedAt[m] or 0) > 0.6 then
+					blockedAt[m] = t
+					notify(m, "🛡️ Blocked a chomp!", Config.Abilities.Bubble.Color)
+					notify(s, "Your bite bounced off a shield!", Color3.fromRGB(255, 200, 120))
+				end
+				continue
+			end
+			-- Chomp!
+			s.RoundTags += 1
+			Remotes.Effect:FireAllClients("Chomp", { Position = mr.Position })
+			if s.Player then
+				PlayerData.Update(s.Player, function(d)
+					d.Tags += 1
+				end)
+				reward(s, Config.Rewards.Tag, `Chomped {m.Name}`)
+			end
+			becomeShark(m, "chomp", s)
+			break
+		end
+	end
+end
+
+local function checkArrivals()
+	for _, m in Entities.WithRole("Minnow") do
+		if m.InRound and not m.SafeThisCrossing then
+			local p = Entities.Position(m)
+			if p and p.X * direction > SAFE + 1 then
+				m.SafeThisCrossing = true
+				notify(m, "✅ Safe! Wait for the next crossing.", Color3.fromRGB(120, 255, 160))
+			end
+		end
+	end
+end
+
+RunService.Heartbeat:Connect(function()
+	Entities.UpdateMovement()
+	if not roundRunning then
+		return
+	end
+	Bots.Step(phase == "Crossing", direction)
+	if phase == "Crossing" then
+		Abilities.Step()
+		tryTags()
+		checkArrivals()
+	end
+end)
+
+local function waitPhase(duration: number, stopEarly: (() -> boolean)?)
+	local endsAt = now() + duration
+	setState({ PhaseEndsAt = endsAt })
+	while now() < endsAt do
+		if stopEarly and stopEarly() then
+			return
+		end
+		task.wait(0.1)
+	end
+end
+
+local function pickSharks(pool: { Entity }, count: number): { [Entity]: boolean }
+	-- Real players who were shark last round get a lower chance, so the role moves around.
+	local weighted = {}
+	for _, e in pool do
+		local w = if lastSharks[e.Id] then 1 else 4
+		for _ = 1, w do
+			table.insert(weighted, e)
+		end
+	end
+	local chosen: { [Entity]: boolean } = {}
+	local picked = 0
+	while picked < count and #weighted > 0 do
+		local e = weighted[math.random(1, #weighted)]
+		chosen[e] = true
+		picked += 1
+		for i = #weighted, 1, -1 do
+			if weighted[i] == e then
+				table.remove(weighted, i)
+			end
+		end
+	end
+	table.clear(lastSharks)
+	for e in chosen do
+		lastSharks[e.Id] = true
+	end
+	return chosen
+end
+
+local function placeSharksAtCenter()
+	local sharks = Entities.WithRole("Shark")
+	for i, s in sharks do
+		if s.InRound then
+			local cf = MapBuilder.SharkSpawn(i, #sharks)
+			Entities.Teleport(s, CFrame.lookAt(cf.Position, cf.Position - Vector3.new(direction, 0, 0)))
+		end
+	end
+end
+
+-- The loop -------------------------------------------------------------------------------------
+
+local function readyPlayers(): { Entity }
+	local out = {}
+	for _, p in Players:GetPlayers() do
+		local e = Entities.Get(p)
+		if e and PlayerData.Get(p) and Entities.Root(e) then
+			table.insert(out, e)
+		end
+	end
+	return out
+end
+
+local function intermission()
+	while true do
+		local ready = readyPlayers()
+		local needed = if Config.BotsEnabled then Config.MinPlayersToStart else math.max(2, Config.MinPlayersToStart)
+		if #ready >= needed then
+			break
+		end
+		phase = "Waiting"
+		setState({ Phase = "Waiting", Status = `Waiting for players ({#ready}/{needed})`, PhaseEndsAt = 0 })
+		task.wait(1)
+	end
+	phase = "Intermission"
+	setState({ Phase = "Intermission", Status = "Next round starting", Crossing = 0 })
+	waitPhase(Config.IntermissionTime, function()
+		return #readyPlayers() == 0
+	end)
+end
+
+local function endRound(title: string, subtitle: string, color: Color3)
+	phase = "Ended"
+	Abilities.Active = false
+	setState({ Phase = "Ended", Status = title })
+	banner(nil, title, subtitle, color)
+	waitPhase(Config.EndScreenTime)
+
+	for _, e in participants() do
+		e.InRound = false
+		Entities.ResetRoundState(e)
+		Entities.SetRole(e, "Lobby")
+		if not e.IsBot then
+			Entities.Teleport(e, MapBuilder.LobbySpot())
+		end
+	end
+	Bots.Clear()
+	Abilities.Clear()
+	table.clear(blockedAt)
+	setGates(true)
+	roundRunning = false
+	refreshCounts()
+end
+
+local function runRound()
+	local players = readyPlayers()
+	if #players == 0 then
+		return
+	end
+	local everyone = table.clone(players)
+	if Config.BotsEnabled and #everyone < Config.BotFillTarget then
+		for _, b in Bots.Spawn(Config.BotFillTarget - #everyone) do
+			table.insert(everyone, b)
+		end
+	end
+
+	local sharkCount = math.max(1, math.floor(#everyone / Config.SharksPerPlayers))
+	local sharks = pickSharks(everyone, sharkCount)
+
+	direction = 1
+	roundRunning = true
+	for _, e in everyone do
+		Entities.ResetRoundState(e)
+		e.InRound = true
+		Entities.SetRole(e, if sharks[e] then "Shark" else "Minnow")
+		Bots.Configure(e)
+	end
+	startingMinnows = countRole("Minnow")
+
+	local minnowsList = Entities.WithRole("Minnow")
+	for i, m in minnowsList do
+		Entities.Teleport(m, MapBuilder.ShoreSpawn(-1, i, #minnowsList))
+	end
+	placeSharksAtCenter()
+	refreshCounts()
+
+	for e in sharks do
+		banner(e.Player, "YOU ARE THE SHARK 🦈", "Chomp every minnow before they cross!", Config.Colors.SharkOutline)
+	end
+	for _, m in minnowsList do
+		banner(m.Player, "YOU ARE A MINNOW 🐟", "Cross to the other beach without getting chomped!", Config.Colors.Minnow)
+	end
+
+	local function minnowsGone(): boolean
+		return countRole("Minnow") == 0
+	end
+	local function hasChampion(): boolean
+		return startingMinnows >= 3 and countRole("Minnow") == 1
+	end
+	local function abandoned(): boolean
+		return realPlayersInRound() == 0
+	end
+
+	for crossing = 1, Config.MaxCrossings do
+		-- Ready: gates shut, sharks reset to the middle and held still
+		phase = "Ready"
+		Abilities.Active = false
+		setGates(true)
+		setState({ Phase = "Ready", Crossing = crossing, Direction = direction, Status = `Crossing {crossing} of {Config.MaxCrossings}` })
+		placeSharksAtCenter()
+		for _, m in Entities.WithRole("Minnow") do
+			local p = Entities.Position(m)
+			if m.InRound and p and math.abs(p.X) < SAFE + 5 then
+				local side = if math.abs(p.X) > SAFE - 0.5 then math.sign(p.X) else -direction
+				Entities.Teleport(m, CFrame.lookAt(Vector3.new(side * (SAFE + 10), 4, p.Z), Vector3.new(0, 4, p.Z)))
+			end
+		end
+		for _, e in participants() do
+			e.SafeThisCrossing = false
+			e.Frozen = e.Role == "Shark"
+		end
+		Bots.NewCrossing()
+		waitPhase(Config.ReadyTime, abandoned)
+		if abandoned() then
+			break
+		end
+
+		-- Crossing: gates drop and it's a race to the far beach
+		phase = "Crossing"
+		Abilities.Active = true
+		setGates(false)
+		for _, e in participants() do
+			e.Frozen = false
+		end
+		setState({ Phase = "Crossing", Status = "SWIM!" })
+		Remotes.Effect:FireAllClients("Go", {})
+		-- shorter timer later in the round keeps the pace up
+		local crossTime = math.max(12, Config.CrossTime - (crossing - 1))
+		waitPhase(crossTime, function()
+			if minnowsGone() or hasChampion() or abandoned() then
+				return true
+			end
+			for _, m in Entities.WithRole("Minnow") do
+				if m.InRound and not m.SafeThisCrossing then
+					return false
+				end
+			end
+			return true -- everyone made it
+		end)
+		Abilities.Active = false
+
+		-- Anyone still in the water (or who never left) becomes a shark, unless they're the
+		-- last minnow standing — that's a win, not a timeout.
+		if not hasChampion() then
+			for _, m in Entities.WithRole("Minnow") do
+				if m.InRound and not m.SafeThisCrossing then
+					becomeShark(m, "timeout", nil)
+				end
+			end
+		end
+		for _, m in Entities.WithRole("Minnow") do
+			if m.InRound and m.SafeThisCrossing then
+				m.RoundCrossings += 1
+				reward(m, Config.Rewards.Crossing, `Crossing {crossing} survived`)
+				if m.Player then
+					PlayerData.Update(m.Player, function(d)
+						d.Crossings += 1
+					end)
+				end
+			end
+		end
+
+		if minnowsGone() or hasChampion() or abandoned() then
+			break
+		end
+		direction = -direction
+	end
+
+	-- Results
+	local survivors = {}
+	for _, m in Entities.WithRole("Minnow") do
+		if m.InRound then
+			table.insert(survivors, m)
+		end
+	end
+
+	for _, e in participants() do
+		reward(e, Config.Rewards.Participation, "Thanks for playing")
+	end
+
+	if abandoned() then
+		endRound("ROUND OVER", "Everyone left the ocean.", Color3.fromRGB(200, 200, 200))
+		return
+	end
+
+	if #survivors == 0 then
+		-- Sharks cleared the ocean. The starting sharks take the win.
+		local names = {}
+		for e in sharks do
+			if e.InRound then
+				table.insert(names, e.Name)
+				if e.Player then
+					PlayerData.Update(e.Player, function(d)
+						d.Wins += 1
+						d.Gems += Config.Rewards.WinGems
+					end)
+					notify(e, `+{Config.Rewards.WinGems} 💎  Shark victory`, Config.Colors.Gems)
+				end
+			end
+		end
+		for _, s in Entities.WithRole("Shark") do
+			if s.InRound then
+				reward(s, Config.Rewards.SharkWin, "The ocean is cleared")
+			end
+		end
+		endRound("SHARKS WIN 🦈", `{table.concat(names, ", ")} cleared the ocean!`, Config.Colors.SharkOutline)
+	else
+		local names = {}
+		for _, m in survivors do
+			table.insert(names, m.Name)
+			reward(m, Config.Rewards.MinnowWin, "Survived the round")
+			if #survivors == 1 then
+				reward(m, Config.Rewards.LastMinnowBonus, "Last minnow standing")
+			end
+			if m.Player then
+				PlayerData.Update(m.Player, function(d)
+					d.Wins += 1
+					d.Gems += Config.Rewards.WinGems
+				end)
+				notify(m, `+{Config.Rewards.WinGems} 💎  Minnow victory`, Config.Colors.Gems)
+			end
+		end
+		local title = if #survivors == 1 then "LAST MINNOW STANDING 🐟" else "MINNOWS WIN 🐟"
+		endRound(title, `{table.concat(names, ", ")} survived the sharks!`, Config.Colors.Minnow)
+	end
+end
+
+while true do
+	intermission()
+	local ok, err = pcall(function()
+		runRound()
+	end)
+	if not ok then
+		warn("[SvM] Round crashed:", err)
+		if roundRunning then
+			pcall(endRound, "ROUND OVER", "Something went wrong — starting a new round.", Color3.fromRGB(200, 200, 200))
+		end
+	end
+end
+]]></ProtectedString>
+       </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="RBX8">
+       <Properties>
+        <string name="Name">MapBuilder</string>
+        <ProtectedString name="Source"><![CDATA[--!strict
+-- Builds the whole world from code when the server starts: lobby island, the two shores,
+-- the shallow ocean in between, gates, shark barriers, reef obstacles and lighting.
+-- No models or decals are needed, so the place works as soon as it's opened.
+
+local Lighting = game:GetService("Lighting")
+local PhysicsService = game:GetService("PhysicsService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage.Shared.Config)
+
+local MapBuilder = {}
+
+local HALF_L = Config.ArenaHalfLength
+local HALF_W = Config.ArenaHalfWidth
+local SAFE = Config.SafeLine
+
+local SAND = Color3.fromRGB(236, 214, 160)
+local WET_SAND = Color3.fromRGB(196, 170, 120)
+local WATER = Color3.fromRGB(40, 170, 205)
+local SEABED = Color3.fromRGB(70, 130, 140)
+
+export type Map = {
+	Folder: Folder,
+	Gates: { BasePart },
+	LobbySpawn: SpawnLocation,
+}
+
+local function part(props: { [string]: any }): Part
+	local p = Instance.new("Part")
+	p.Anchored = true
+	p.TopSurface = Enum.SurfaceType.Smooth
+	p.BottomSurface = Enum.SurfaceType.Smooth
+	for k, v in props do
+		if k ~= "Parent" then
+			(p :: any)[k] = v
+		end
+	end
+	p.Parent = props.Parent
+	return p
+end
+
+local function invisibleWall(parent: Instance, name: string, cf: CFrame, size: Vector3, group: string?): Part
+	return part({
+		Name = name, CFrame = cf, Size = size, Transparency = 1, CanQuery = false, CanTouch = false,
+		CollisionGroup = group or "Default", Parent = parent,
+	})
+end
+
+local function sign(parent: Instance, cf: CFrame, size: Vector3, text: string, color: Color3, face: Enum.NormalId?): Part
+	local board = part({
+		Name = "Sign", CFrame = cf, Size = size, Color = Color3.fromRGB(60, 40, 30), Material = Enum.Material.Wood, Parent = parent,
+	})
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = face or Enum.NormalId.Front
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 40
+	gui.LightInfluence = 0.2
+	gui.Parent = board
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.FredokaOne
+	label.TextScaled = true
+	label.TextColor3 = color
+	label.Text = text
+	local stroke = Instance.new("UIStroke")
+	stroke.Thickness = 4
+	stroke.Color = Color3.fromRGB(20, 20, 30)
+	stroke.Parent = label
+	label.Parent = gui
+	return board
+end
+
+local function floorText(parent: Instance, cf: CFrame, size: Vector2, text: string, color: Color3)
+	local p = part({
+		Name = "FloorText", CFrame = cf, Size = Vector3.new(size.X, 0.05, size.Y), Transparency = 1,
+		CanCollide = false, CanQuery = false, CanTouch = false, Parent = parent,
+	})
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = Enum.NormalId.Top
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 20
+	gui.Parent = p
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.FredokaOne
+	label.TextScaled = true
+	label.TextColor3 = color
+	label.TextTransparency = 0.25
+	label.Text = text
+	label.Parent = gui
+end
+
+local function palm(parent: Instance, base: Vector3, rng: Random)
+	local model = Instance.new("Model")
+	model.Name = "Palm"
+	local height = rng:NextNumber(14, 22)
+	local lean = rng:NextNumber(-12, 12)
+	local segments = 6
+	local top = base
+	for i = 1, segments do
+		local t = i / segments
+		local nextPoint = base + Vector3.new(math.sin(math.rad(lean)) * height * t * t, height * t, 0)
+		local mid = (top + nextPoint) / 2
+		part({
+			Name = "Trunk", Shape = Enum.PartType.Cylinder,
+			CFrame = CFrame.lookAt(mid, nextPoint) * CFrame.Angles(0, math.rad(90), 0),
+			Size = Vector3.new((nextPoint - top).Magnitude + 0.3, 1.6 - t * 0.5, 1.6 - t * 0.5),
+			Color = Color3.fromRGB(130, 95, 60), Material = Enum.Material.Wood, Parent = model,
+		})
+		top = nextPoint
+	end
+	for i = 0, 6 do
+		local yaw = i * (360 / 7) + rng:NextNumber(-10, 10)
+		local cf = CFrame.new(top) * CFrame.Angles(0, math.rad(yaw), 0) * CFrame.Angles(math.rad(-25), 0, 0)
+		part({
+			Name = "Frond", CFrame = cf * CFrame.new(0, -0.6, -4.5), Size = Vector3.new(2.6, 0.3, 9),
+			Color = Color3.fromRGB(60, 160, 70), Material = Enum.Material.Grass, CanCollide = false, Parent = model,
+		})
+	end
+	part({
+		Name = "Coconuts", Shape = Enum.PartType.Ball, CFrame = CFrame.new(top - Vector3.new(0, 1, 0)), Size = Vector3.new(1.6, 1.6, 1.6),
+		Color = Color3.fromRGB(110, 75, 40), Parent = model,
+	})
+	model.Parent = parent
+end
+
+local function umbrella(parent: Instance, base: Vector3, color: Color3)
+	local model = Instance.new("Model")
+	model.Name = "Umbrella"
+	part({
+		Name = "Pole", Shape = Enum.PartType.Cylinder, CFrame = CFrame.new(base + Vector3.new(0, 4, 0)) * CFrame.Angles(0, 0, math.rad(90)),
+		Size = Vector3.new(8, 0.4, 0.4), Color = Color3.fromRGB(240, 240, 240), Parent = model,
+	})
+	for i = 0, 7 do
+		local cf = CFrame.new(base + Vector3.new(0, 8, 0)) * CFrame.Angles(0, math.rad(i * 45), 0) * CFrame.Angles(math.rad(-18), 0, 0)
+		part({
+			Name = "Canopy", CFrame = cf * CFrame.new(0, 0, -2.4), Size = Vector3.new(3.8, 0.2, 5),
+			Color = if i % 2 == 0 then color else Color3.fromRGB(250, 250, 250), CanCollide = false, Parent = model,
+		})
+	end
+	model.Parent = parent
+end
+
+local function rock(parent: Instance, pos: Vector3, rng: Random, scale: number)
+	local model = Instance.new("Model")
+	model.Name = "Rock"
+	for _ = 1, rng:NextInteger(2, 4) do
+		local s = Vector3.new(rng:NextNumber(4, 8), rng:NextNumber(3, 7), rng:NextNumber(4, 8)) * scale
+		part({
+			Name = "Stone", Size = s,
+			CFrame = CFrame.new(pos + Vector3.new(rng:NextNumber(-2, 2), s.Y / 2 - 0.6, rng:NextNumber(-2, 2)) * scale)
+				* CFrame.Angles(rng:NextNumber(-0.3, 0.3), rng:NextNumber(0, math.pi), rng:NextNumber(-0.3, 0.3)),
+			Color = Color3.fromRGB(105, 110, 115):Lerp(Color3.fromRGB(80, 95, 90), rng:NextNumber()), Material = Enum.Material.Slate, Parent = model,
+		})
+	end
+	model.Parent = parent
+end
+
+local CORAL_COLORS = {
+	Color3.fromRGB(255, 110, 140), Color3.fromRGB(255, 160, 80), Color3.fromRGB(190, 110, 255), Color3.fromRGB(255, 230, 110),
+}
+
+local function coral(parent: Instance, pos: Vector3, rng: Random)
+	local model = Instance.new("Model")
+	model.Name = "Coral"
+	local color = CORAL_COLORS[rng:NextInteger(1, #CORAL_COLORS)]
+	for _ = 1, rng:NextInteger(3, 6) do
+		local h = rng:NextNumber(2, 6)
+		local tilt = CFrame.Angles(rng:NextNumber(-0.5, 0.5), 0, rng:NextNumber(-0.5, 0.5))
+		local base = CFrame.new(pos + Vector3.new(rng:NextNumber(-2.5, 2.5), 0, rng:NextNumber(-2.5, 2.5))) * tilt
+		part({
+			Name = "Branch", Shape = Enum.PartType.Cylinder, CFrame = base * CFrame.new(0, h / 2, 0) * CFrame.Angles(0, 0, math.rad(90)),
+			Size = Vector3.new(h, 1, 1), Color = color, Material = Enum.Material.SmoothPlastic, Parent = model,
+		})
+		part({
+			Name = "Tip", Shape = Enum.PartType.Ball, CFrame = base * CFrame.new(0, h, 0), Size = Vector3.new(1.6, 1.6, 1.6),
+			Color = color:Lerp(Color3.new(1, 1, 1), 0.3), Material = Enum.Material.Neon, CanCollide = false, Parent = model,
+		})
+	end
+	model.Parent = parent
+end
+
+local function kelp(parent: Instance, pos: Vector3, rng: Random)
+	local model = Instance.new("Model")
+	model.Name = "Kelp"
+	for _ = 1, rng:NextInteger(3, 5) do
+		local h = rng:NextNumber(5, 10)
+		part({
+			Name = "Blade", CFrame = CFrame.new(pos + Vector3.new(rng:NextNumber(-2, 2), h / 2, rng:NextNumber(-2, 2)))
+				* CFrame.Angles(rng:NextNumber(-0.15, 0.15), rng:NextNumber(0, math.pi), rng:NextNumber(-0.15, 0.15)),
+			Size = Vector3.new(0.8, h, 0.2), Color = Color3.fromRGB(50, 130, 60), Material = Enum.Material.Grass,
+			CanCollide = false, CanQuery = false, Parent = model,
+		})
+	end
+	model.Parent = parent
+end
+
+local function setupCollisionGroups()
+	PhysicsService:RegisterCollisionGroup("Sharks")
+	PhysicsService:RegisterCollisionGroup("SharkWall")
+	PhysicsService:CollisionGroupSetCollidable("SharkWall", "Default", false)
+	PhysicsService:CollisionGroupSetCollidable("SharkWall", "Sharks", true)
+end
+
+local function setupLighting()
+	Lighting.ClockTime = 14.5
+	Lighting.Brightness = 2.6
+	Lighting.Ambient = Color3.fromRGB(110, 120, 130)
+	Lighting.OutdoorAmbient = Color3.fromRGB(140, 150, 160)
+	Lighting.EnvironmentDiffuseScale = 0.6
+	Lighting.EnvironmentSpecularScale = 0.6
+	Lighting.GlobalShadows = true
+
+	local atmosphere = Instance.new("Atmosphere")
+	atmosphere.Density = 0.28
+	atmosphere.Offset = 0.1
+	atmosphere.Color = Color3.fromRGB(200, 230, 245)
+	atmosphere.Decay = Color3.fromRGB(110, 170, 200)
+	atmosphere.Glare = 0.3
+	atmosphere.Haze = 1.2
+	atmosphere.Parent = Lighting
+
+	local cc = Instance.new("ColorCorrectionEffect")
+	cc.Saturation = 0.15
+	cc.Contrast = 0.05
+	cc.TintColor = Color3.fromRGB(255, 252, 245)
+	cc.Parent = Lighting
+
+	local bloom = Instance.new("BloomEffect")
+	bloom.Intensity = 0.4
+	bloom.Size = 30
+	bloom.Threshold = 1.6
+	bloom.Parent = Lighting
+
+	local sun = Instance.new("SunRaysEffect")
+	sun.Intensity = 0.06
+	sun.Spread = 0.6
+	sun.Parent = Lighting
+end
+
+local function buildArena(folder: Folder, gates: { BasePart })
+	local arena = Instance.new("Folder")
+	arena.Name = "Arena"
+	arena.Parent = folder
+
+	local rng = Random.new(20261013)
+
+	-- Ground
+	part({ Name = "Seabed", Size = Vector3.new(SAFE * 2, 2, HALF_W * 2), CFrame = CFrame.new(0, -1, 0), Color = SEABED, Material = Enum.Material.Sand, Parent = arena })
+	for _, side in { -1, 1 } do
+		local depth = HALF_L - SAFE
+		part({
+			Name = if side < 0 then "ShoreA" else "ShoreB", Size = Vector3.new(depth, 2, HALF_W * 2),
+			CFrame = CFrame.new(side * (SAFE + depth / 2), -0.9, 0), Color = SAND, Material = Enum.Material.Sand, Parent = arena,
+		})
+		-- wet sand strip where the waves meet the beach
+		part({
+			Name = "Shoreline", Size = Vector3.new(6, 2, HALF_W * 2), CFrame = CFrame.new(side * (SAFE - 3), -0.95, 0),
+			Color = WET_SAND, Material = Enum.Material.Sand, Parent = arena,
+		})
+		-- glowing safe line
+		part({
+			Name = "SafeLine", Size = Vector3.new(1, 0.2, HALF_W * 2), CFrame = CFrame.new(side * SAFE, 0.1, 0),
+			Color = Color3.fromRGB(120, 255, 170), Material = Enum.Material.Neon, CanCollide = false, CanQuery = false, Parent = arena,
+		})
+		floorText(arena, CFrame.new(side * (SAFE + depth / 2), 0.15, 0) * CFrame.Angles(0, math.rad(side * 90), 0), Vector2.new(60, 22), "SAFE ZONE", Color3.fromRGB(255, 255, 255))
+
+		-- the gate that holds everyone in place during the countdown
+		local gate = part({
+			Name = if side < 0 then "GateA" else "GateB", Size = Vector3.new(1, 14, HALF_W * 2), CFrame = CFrame.new(side * SAFE, 7, 0),
+			Color = Color3.fromRGB(120, 230, 255), Material = Enum.Material.ForceField, Transparency = 0.2, CanQuery = false, Parent = arena,
+		})
+		table.insert(gates, gate)
+
+		-- sharks can never climb onto the beach
+		invisibleWall(arena, "SharkWall", CFrame.new(side * (SAFE - 0.5), 25, 0), Vector3.new(1, 50, HALF_W * 2), "SharkWall")
+
+		-- beach decoration along the back
+		for i = 1, 6 do
+			local z = -HALF_W + i * (HALF_W * 2 / 7) + rng:NextNumber(-4, 4)
+			palm(arena, Vector3.new(side * (HALF_L - rng:NextNumber(3, 7)), 0, z), rng)
+		end
+		for i = 1, 3 do
+			umbrella(arena, Vector3.new(side * (HALF_L - 12), 0, -HALF_W + i * (HALF_W * 2 / 4) + 10), CORAL_COLORS[i])
+		end
+		sign(arena, CFrame.new(side * (HALF_L - 2), 9, 0) * CFrame.Angles(0, math.rad(side * 90), 0), Vector3.new(30, 8, 1),
+			if side < 0 then "WEST BEACH" else "EAST BEACH", Color3.fromRGB(255, 220, 120))
+	end
+
+	-- The ocean: a see-through layer so everyone wades up to the knees
+	part({
+		Name = "Water", Size = Vector3.new(SAFE * 2 - 2, 2.4, HALF_W * 2), CFrame = CFrame.new(0, 1.2, 0), Color = WATER,
+		Material = Enum.Material.Glass, Transparency = 0.45, Reflectance = 0.05, CanCollide = false, CanQuery = false, CanTouch = false, Parent = arena,
+	})
+	part({
+		Name = "CenterLine", Size = Vector3.new(0.6, 0.15, HALF_W * 2), CFrame = CFrame.new(0, 0.1, 0),
+		Color = Color3.fromRGB(255, 90, 90), Material = Enum.Material.Neon, Transparency = 0.3, CanCollide = false, CanQuery = false, Parent = arena,
+	})
+
+	-- Reef obstacles, kept off the very middle so sharks have open water to start in
+	local placed: { Vector3 } = {}
+	local function freeSpot(minGap: number): Vector3?
+		for _ = 1, 40 do
+			local p = Vector3.new(rng:NextNumber(-SAFE + 10, SAFE - 10), 0, rng:NextNumber(-HALF_W + 8, HALF_W - 8))
+			if math.abs(p.X) < 12 and math.abs(p.Z) < 20 then
+				continue
+			end
+			local ok = true
+			for _, q in placed do
+				if (q - p).Magnitude < minGap then
+					ok = false
+					break
+				end
+			end
+			if ok then
+				table.insert(placed, p)
+				return p
+			end
+		end
+		return nil
+	end
+	for _ = 1, 12 do
+		local p = freeSpot(22)
+		if p then
+			rock(arena, p, rng, rng:NextNumber(0.9, 1.5))
+		end
+	end
+	for _ = 1, 14 do
+		local p = freeSpot(14)
+		if p then
+			coral(arena, p, rng)
+		end
+	end
+	for _ = 1, 18 do
+		local p = freeSpot(8)
+		if p then
+			kelp(arena, p, rng)
+		end
+	end
+
+	-- Boundary
+	local wallH = 60
+	for _, side in { -1, 1 } do
+		invisibleWall(arena, "Boundary", CFrame.new(0, wallH / 2, side * (HALF_W + 0.5)), Vector3.new(HALF_L * 2 + 2, wallH, 1))
+		invisibleWall(arena, "Boundary", CFrame.new(side * (HALF_L + 0.5), wallH / 2, 0), Vector3.new(1, wallH, HALF_W * 2 + 2))
+		-- low rocky breakwater you can see
+		for x = -HALF_L, HALF_L, 12 do
+			part({
+				Name = "Breakwater", Size = Vector3.new(12, rng:NextNumber(3, 5), 4),
+				CFrame = CFrame.new(x + 6, 1.5, side * (HALF_W + 2)) * CFrame.Angles(0, rng:NextNumber(-0.2, 0.2), 0),
+				Color = Color3.fromRGB(95, 100, 100), Material = Enum.Material.Slate, Parent = arena,
+			})
+		end
+	end
+
+	-- Big open sea around everything for the horizon
+	part({
+		Name = "OpenSea", Size = Vector3.new(2048, 1, 2048), CFrame = CFrame.new(0, -1.5, 0), Color = Color3.fromRGB(30, 120, 170),
+		Material = Enum.Material.Glass, Transparency = 0.1, CanCollide = false, CanQuery = false, CanTouch = false, Parent = folder,
+	})
+end
+
+local function buildLobby(folder: Folder): SpawnLocation
+	local lobby = Instance.new("Folder")
+	lobby.Name = "Lobby"
+	lobby.Parent = folder
+	local c = Config.LobbyCenter
+	local rng = Random.new(77)
+
+	part({ Name = "Island", Shape = Enum.PartType.Cylinder, Size = Vector3.new(4, 110, 110), CFrame = CFrame.new(c - Vector3.new(0, 2, 0)) * CFrame.Angles(0, 0, math.rad(90)), Color = SAND, Material = Enum.Material.Sand, Parent = lobby })
+	part({ Name = "Boardwalk", Size = Vector3.new(14, 0.6, 60), CFrame = CFrame.new(c + Vector3.new(0, 0.3, 30)), Color = Color3.fromRGB(150, 110, 70), Material = Enum.Material.WoodPlanks, Parent = lobby })
+
+	local spawn = Instance.new("SpawnLocation")
+	spawn.Name = "LobbySpawn"
+	spawn.Anchored = true
+	spawn.Size = Vector3.new(12, 1, 12)
+	spawn.CFrame = CFrame.new(c + Vector3.new(0, 0.5, 0))
+	spawn.Color = Config.Colors.Minnow
+	spawn.Material = Enum.Material.SmoothPlastic
+	spawn.Duration = 0
+	spawn.Neutral = true
+	spawn.TopSurface = Enum.SurfaceType.Smooth
+	spawn.Parent = lobby
+
+	for i = 0, 9 do
+		local a = i / 10 * math.pi * 2 + rng:NextNumber(-0.2, 0.2)
+		palm(lobby, c + Vector3.new(math.cos(a) * 44, 0, math.sin(a) * 44), rng)
+	end
+	for i = 1, 4 do
+		local a = i / 4 * math.pi * 2 + 0.4
+		umbrella(lobby, c + Vector3.new(math.cos(a) * 26, 0, math.sin(a) * 26), CORAL_COLORS[i])
+	end
+
+	sign(lobby, CFrame.new(c + Vector3.new(0, 16, -40)) * CFrame.Angles(0, math.pi, 0), Vector3.new(44, 12, 1.5), "SHARKS VS MINNOWS", Color3.fromRGB(255, 200, 80))
+	sign(lobby, CFrame.new(c + Vector3.new(0, 7.5, -40)) * CFrame.Angles(0, math.pi, 0), Vector3.new(44, 5, 1.2),
+		"Cross the ocean. Don't get chomped. Last minnow wins!", Color3.fromRGB(230, 245, 255))
+	part({ Name = "SignPost", Size = Vector3.new(1.5, 18, 1.5), CFrame = CFrame.new(c + Vector3.new(-18, 9, -40.8)), Color = Color3.fromRGB(110, 80, 50), Material = Enum.Material.Wood, Parent = lobby })
+	part({ Name = "SignPost", Size = Vector3.new(1.5, 18, 1.5), CFrame = CFrame.new(c + Vector3.new(18, 9, -40.8)), Color = Color3.fromRGB(110, 80, 50), Material = Enum.Material.Wood, Parent = lobby })
+
+	-- keep people on the island
+	for i = 0, 23 do
+		local a = i / 24 * math.pi * 2
+		invisibleWall(lobby, "Edge", CFrame.new(c + Vector3.new(math.cos(a) * 55, 20, math.sin(a) * 55)) * CFrame.Angles(0, -a, 0), Vector3.new(2, 40, 15))
+	end
+
+	return spawn
+end
+
+function MapBuilder.Build(): Map
+	setupCollisionGroups()
+	setupLighting()
+
+	local existing = workspace:FindFirstChild("SvMMap")
+	if existing then
+		existing:Destroy()
+	end
+	local folder = Instance.new("Folder")
+	folder.Name = "SvMMap"
+
+	local gates: { BasePart } = {}
+	buildArena(folder, gates)
+	local spawn = buildLobby(folder)
+	folder.Parent = workspace
+
+	return { Folder = folder, Gates = gates, LobbySpawn = spawn }
+end
+
+-- Where a minnow should start on a given shore (-1 = west, 1 = east).
+function MapBuilder.ShoreSpawn(side: number, index: number, count: number): CFrame
+	local span = HALF_W * 2 - 20
+	local z = if count <= 1 then 0 else -span / 2 + (index - 1) * span / (count - 1)
+	local x = side * (SAFE + 8 + (index % 3) * 4)
+	return CFrame.lookAt(Vector3.new(x, 4, z), Vector3.new(0, 4, z))
+end
+
+function MapBuilder.SharkSpawn(index: number, count: number): CFrame
+	local z = if count <= 1 then 0 else -14 + (index - 1) * 28 / (count - 1)
+	return CFrame.new(0, 4, z)
+end
+
+function MapBuilder.LobbySpot(): CFrame
+	local c = Config.LobbyCenter
+	return CFrame.new(c + Vector3.new(math.random(-15, 15), 4, math.random(-10, 15)))
+end
+
+return MapBuilder
+]]></ProtectedString>
+       </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="RBX9">
+       <Properties>
+        <string name="Name">PlayerData</string>
+        <ProtectedString name="Source"><![CDATA[--!strict
+-- Saves coins, gems, wins, unlocks and items. Values the client needs to show are mirrored
+-- onto Player attributes and leaderstats, so the UI just listens for attribute changes.
+
+local DataStoreService = game:GetService("DataStoreService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local Config = require(ReplicatedStorage.Shared.Config)
+
+export type Data = {
+	Coins: number,
+	Gems: number,
+	Wins: number,
+	Tags: number,
+	Crossings: number,
+	OwnedAbilities: { [string]: boolean },
+	Equipped: { Minnow: string, Shark: string },
+	Items: { [string]: number },
+	OwnedTrails: { [string]: boolean },
+	Trail: string,
+	Codes: { [string]: boolean },
+}
+
+local PlayerData = {}
+
+local store: DataStore? = nil
+do
+	local ok, result = pcall(function()
+		return DataStoreService:GetDataStore(Config.DataStoreName)
+	end)
+	if ok then
+		store = result
+	else
+		warn("[SvM] DataStores unavailable, progress won't save this session:", result)
+	end
+end
+
+local cache: { [Player]: Data } = {}
+local loaded: { [Player]: boolean } = {}
+
+local function defaultData(): Data
+	local owned = {}
+	for id, def in Config.Abilities do
+		if def.Price == 0 then
+			owned[id] = true
+		end
+	end
+	return {
+		Coins = 100,
+		Gems = 0,
+		Wins = 0,
+		Tags = 0,
+		Crossings = 0,
+		OwnedAbilities = owned,
+		Equipped = { Minnow = Config.DefaultAbility.Minnow, Shark = Config.DefaultAbility.Shark },
+		Items = table.clone(Config.StarterItems),
+		OwnedTrails = {},
+		Trail = "",
+		Codes = {},
+	}
+end
+
+-- Fill in any fields added since the player last saved.
+local function reconcile(saved: any): Data
+	local data = defaultData()
+	if typeof(saved) ~= "table" then
+		return data
+	end
+	for key, value in saved do
+		local current = (data :: any)[key]
+		if current ~= nil and typeof(value) == typeof(current) then
+			if typeof(value) == "table" then
+				for k, v in value do
+					current[k] = v
+				end
+			else
+				(data :: any)[key] = value
+			end
+		end
+	end
+	return data
+end
+
+local function mirror(player: Player, data: Data)
+	player:SetAttribute("Coins", data.Coins)
+	player:SetAttribute("Gems", data.Gems)
+	player:SetAttribute("EquippedMinnow", data.Equipped.Minnow)
+	player:SetAttribute("EquippedShark", data.Equipped.Shark)
+	player:SetAttribute("Trail", data.Trail)
+	for id in Config.Abilities do
+		player:SetAttribute("Owns_" .. id, data.OwnedAbilities[id] == true)
+	end
+	for id in Config.Items do
+		player:SetAttribute("Item_" .. id, data.Items[id] or 0)
+	end
+	for id in Config.Trails do
+		player:SetAttribute("OwnsTrail_" .. id, data.OwnedTrails[id] == true)
+	end
+
+	local stats = player:FindFirstChild("leaderstats")
+	if stats then
+		(stats:FindFirstChild("Wins") :: IntValue).Value = data.Wins;
+		(stats:FindFirstChild("Coins") :: IntValue).Value = data.Coins
+	end
+end
+
+function PlayerData.Load(player: Player)
+	local stats = Instance.new("Folder")
+	stats.Name = "leaderstats"
+	local wins = Instance.new("IntValue")
+	wins.Name = "Wins"
+	wins.Parent = stats
+	local coins = Instance.new("IntValue")
+	coins.Name = "Coins"
+	coins.Parent = stats
+	stats.Parent = player
+
+	local saved = nil
+	local readOk = false
+	if store then
+		for attempt = 1, 3 do
+			local ok, result = pcall(function()
+				return store:GetAsync("p_" .. player.UserId)
+			end)
+			if ok then
+				saved = result
+				readOk = true
+				break
+			end
+			warn(`[SvM] Load attempt {attempt} failed for {player.Name}: {result}`)
+			if RunService:IsStudio() then
+				break -- usually "API access disabled"; don't stall Studio tests
+			end
+			task.wait(attempt)
+		end
+	end
+	if not player.Parent then
+		return
+	end
+
+	local data = reconcile(saved)
+	cache[player] = data
+	-- Only save back what we successfully read, so a failed load never wipes real progress.
+	loaded[player] = readOk
+	mirror(player, data)
+end
+
+function PlayerData.Save(player: Player)
+	local data = cache[player]
+	if not (store and data and loaded[player]) then
+		return
+	end
+	local ok, err = pcall(function()
+		store:SetAsync("p_" .. player.UserId, data)
+	end)
+	if not ok then
+		warn(`[SvM] Save failed for {player.Name}: {err}`)
+	end
+end
+
+function PlayerData.Get(player: Player): Data?
+	return cache[player]
+end
+
+function PlayerData.Release(player: Player)
+	PlayerData.Save(player)
+	cache[player] = nil
+	loaded[player] = nil
+end
+
+-- Apply a change and push the result to attributes/leaderstats.
+function PlayerData.Update(player: Player, fn: (Data) -> ())
+	local data = cache[player]
+	if not data then
+		return
+	end
+	fn(data)
+	mirror(player, data)
+end
+
+function PlayerData.AddCoins(player: Player, amount: number)
+	PlayerData.Update(player, function(d)
+		d.Coins += amount
+	end)
+end
+
+function PlayerData.AddGems(player: Player, amount: number)
+	PlayerData.Update(player, function(d)
+		d.Gems += amount
+	end)
+end
+
+function PlayerData.Init()
+	task.spawn(function()
+		while true do
+			task.wait(120)
+			for _, player in Players:GetPlayers() do
+				task.spawn(PlayerData.Save, player)
+			end
+		end
+	end)
+	game:BindToClose(function()
+		local pending = 0
+		for _, player in Players:GetPlayers() do
+			pending += 1
+			task.spawn(function()
+				PlayerData.Save(player)
+				pending -= 1
+			end)
+		end
+		local start = os.clock()
+		while pending > 0 and os.clock() - start < 20 do
+			task.wait(0.1)
+		end
+	end)
+end
+
+return PlayerData
+]]></ProtectedString>
+       </Properties>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="StarterPlayer" referent="RBX19">
+   <Properties>
+    <string name="Name">StarterPlayer</string>
+   </Properties>
+    <Item class="StarterPlayerScripts" referent="RBX18">
+     <Properties>
+      <string name="Name">StarterPlayerScripts</string>
+     </Properties>
+      <Item class="Folder" referent="RBX17">
+       <Properties>
+        <string name="Name">Client</string>
+       </Properties>
+        <Item class="LocalScript" referent="RBX12">
+         <Properties>
+          <string name="Name">Client</string>
+          <ProtectedString name="Source"><![CDATA[--!strict
+-- Client entry point: input, remote events, spectating and UI scaling.
+
+local ContextActionService = game:GetService("ContextActionService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
+
+local Config = require(ReplicatedStorage.Shared.Config)
+local Remotes = require(ReplicatedStorage.Shared.Remotes)
+local Ui = require(script.Parent:WaitForChild("Ui"))
+local Fx = require(script.Parent:WaitForChild("Fx"))
+local Hud = require(script.Parent:WaitForChild("Hud"))
+local Shop = require(script.Parent:WaitForChild("Shop"))
+
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+pcall(function()
+	StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
+end)
+
+-- Scale the whole HUD down on small screens (phones, small windows).
+local scale = Ui.make("UIScale", { Parent = Hud.Gui })
+local function rescale()
+	local v = camera.ViewportSize
+	scale.Scale = math.clamp(math.min(v.X / 1100, v.Y / 720), 0.55, 1)
+end
+camera:GetPropertyChangedSignal("ViewportSize"):Connect(rescale)
+rescale()
+
+-- Input ---------------------------------------------------------------------------------------
+
+local function useAbility()
+	Remotes.UseAbility:FireServer()
+end
+
+local function useItem(id: string)
+	Remotes.UseItem:FireServer(id)
+end
+
+ContextActionService:BindAction("SvMAbility", function(_, state)
+	if state == Enum.UserInputState.Begin then
+		useAbility()
+	end
+	return Enum.ContextActionResult.Sink
+end, false, Enum.KeyCode.E, Enum.KeyCode.ButtonX)
+
+for _, id in Config.ItemOrder do
+	local def = Config.Items[id]
+	local key = ({ ["1"] = Enum.KeyCode.One, ["2"] = Enum.KeyCode.Two, ["3"] = Enum.KeyCode.Three })[def.Key]
+	ContextActionService:BindAction("SvMItem" .. id, function(_, state)
+		if state == Enum.UserInputState.Begin then
+			useItem(id)
+		end
+		return Enum.ContextActionResult.Sink
+	end, false, key)
+	Hud.ItemSlots[id].Button.Activated:Connect(function()
+		useItem(id)
+	end)
+end
+Hud.AbilitySlot.Button.Activated:Connect(useAbility)
+
+Hud.ShopButton.Activated:Connect(Shop.ToggleShop)
+Hud.CodesButton.Activated:Connect(Shop.ToggleCodes)
+
+-- Spectating -----------------------------------------------------------------------------------
+
+local spectating = false
+local specIndex = 0
+
+local function inRoundModels(): { Model }
+	local out = {}
+	for _, p in Players:GetPlayers() do
+		if p ~= player and p.Character and (p:GetAttribute("Role") == "Minnow" or p:GetAttribute("Role") == "Shark") then
+			table.insert(out, p.Character)
+		end
+	end
+	local bots = workspace:FindFirstChild("SvMBots")
+	if bots then
+		for _, m in bots:GetChildren() do
+			if m:IsA("Model") and m:GetAttribute("Role") ~= "Lobby" then
+				table.insert(out, m)
+			end
+		end
+	end
+	return out
+end
+
+local function stopSpectating()
+	spectating = false
+	Hud.SpectateButton.Text = "👀 SPECTATE"
+	local h = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	if h then
+		camera.CameraSubject = h
+	end
+end
+
+local function nextTarget()
+	local models = inRoundModels()
+	if #models == 0 then
+		stopSpectating()
+		return
+	end
+	specIndex = specIndex % #models + 1
+	local target = models[specIndex]
+	local h = target:FindFirstChildOfClass("Humanoid")
+	if h then
+		camera.CameraSubject = h
+		local name = if h.DisplayName ~= "" then h.DisplayName else target.Name
+		Hud.SpectateButton.Text = "👀 " .. name
+	end
+end
+
+Hud.SpectateButton.Activated:Connect(function()
+	Fx.Sound("Click")
+	-- first click starts; later clicks cycle; the last one in the list stops
+	if not spectating then
+		spectating = true
+		specIndex = 0
+		nextTarget()
+	elseif specIndex >= #inRoundModels() then
+		stopSpectating()
+	else
+		nextTarget()
+	end
+end)
+
+-- Remotes ---------------------------------------------------------------------------------------
+
+Remotes.Notify.OnClientEvent:Connect(function(text: string, color: Color3?)
+	Hud.Toast(text, color)
+end)
+
+Remotes.Banner.OnClientEvent:Connect(function(title: string, subtitle: string, color: Color3?)
+	Hud.Banner(title, subtitle, color)
+end)
+
+Remotes.Feed.OnClientEvent:Connect(function(killer: string, victim: string, how: string)
+	Hud.Feed(killer, victim, how)
+end)
+
+Remotes.Effect.OnClientEvent:Connect(function(kind: string, data: any)
+	if kind == "Burst" then
+		Fx.Burst(data.Position, data.Color, data.Size)
+	elseif kind == "Aura" then
+		Fx.Aura(data.Model, data.Color, data.Duration)
+	elseif kind == "Chomp" then
+		Fx.Chomp(data.Position)
+	elseif kind == "Sonar" then
+		Fx.Sonar(data.Duration)
+	elseif kind == "Inked" then
+		Fx.Inked(data.Duration)
+		Hud.Toast("🦑 Inked! You can't see!", Color3.fromRGB(190, 140, 255))
+	elseif kind == "Go" then
+		Fx.Sound("Go")
+		Hud.Banner("GO!", "", Color3.fromRGB(120, 255, 160))
+	end
+end)
+
+-- Close menus when a crossing starts so nobody is stuck behind a window.
+ReplicatedStorage:GetAttributeChangedSignal("Phase"):Connect(function()
+	local phase = ReplicatedStorage:GetAttribute("Phase")
+	local role = player:GetAttribute("Role")
+	if phase == "Ready" and role ~= "Lobby" then
+		Shop.CloseAll()
+	end
+	if phase ~= "Ready" and phase ~= "Crossing" and spectating then
+		stopSpectating()
+	end
+end)
+
+player:GetAttributeChangedSignal("Role"):Connect(function()
+	if player:GetAttribute("Role") ~= "Lobby" and spectating then
+		stopSpectating()
+	end
+end)
+
+RunService.RenderStepped:Connect(function()
+	Hud.Update()
+	local phase = ReplicatedStorage:GetAttribute("Phase")
+	Hud.SpectateButton.Visible = player:GetAttribute("Role") == "Lobby" and (phase == "Ready" or phase == "Crossing")
+end)
+]]></ProtectedString>
+         </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="RBX13">
+         <Properties>
+          <string name="Name">Fx</string>
+          <ProtectedString name="Source"><![CDATA[--!strict
+-- Client-only visuals and sounds: bursts, auras, chomps, camera shake, sonar and ink.
+
+local Debris = game:GetService("Debris")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local SoundService = game:GetService("SoundService")
+local TweenService = game:GetService("TweenService")
+
+local Fx = {}
+
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+local folder = Instance.new("Folder")
+folder.Name = "SvMClientFx"
+folder.Parent = workspace
+
+-- Built-in sounds that ship with every Roblox client.
+local SOUNDS = {
+	Tick = { Id = "rbxasset://sounds/electronicpingshort.wav", Volume = 0.5 },
+	Go = { Id = "rbxasset://sounds/swoosh.wav", Volume = 0.8 },
+	Whoosh = { Id = "rbxasset://sounds/swoosh.wav", Volume = 0.5 },
+	Chomp = { Id = "rbxasset://sounds/uuhhh.mp3", Volume = 0.6 },
+	Click = { Id = "rbxasset://sounds/button.wav", Volume = 0.4 },
+}
+local soundCache: { [string]: Sound } = {}
+
+function Fx.Sound(name: string, pitch: number?)
+	local def = SOUNDS[name]
+	if not def then
+		return
+	end
+	local s = soundCache[name]
+	if not s then
+		local created = Instance.new("Sound")
+		created.SoundId = def.Id
+		created.Volume = def.Volume
+		created.Parent = SoundService
+		soundCache[name] = created
+		s = created
+	end
+	s.PlaybackSpeed = pitch or 1
+	SoundService:PlayLocalSound(s)
+end
+
+function Fx.Burst(pos: Vector3, color: Color3, size: number)
+	local ball = Instance.new("Part")
+	ball.Shape = Enum.PartType.Ball
+	ball.Anchored = true
+	ball.CanCollide = false
+	ball.CanQuery = false
+	ball.CanTouch = false
+	ball.Material = Enum.Material.Neon
+	ball.Color = color
+	ball.Transparency = 0.3
+	ball.Size = Vector3.one * 1
+	ball.Position = pos
+	ball.Parent = folder
+	local t = math.clamp(size / 30, 0.35, 1.2)
+	TweenService:Create(ball, TweenInfo.new(t, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = Vector3.one * size, Transparency = 1 }):Play()
+	Debris:AddItem(ball, t + 0.1)
+end
+
+function Fx.Aura(model: Instance?, color: Color3, duration: number)
+	if not model then
+		return
+	end
+	local root = model:FindFirstChild("HumanoidRootPart")
+	if not root then
+		return
+	end
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+	emitter.Color = ColorSequence.new(color)
+	emitter.LightEmission = 0.8
+	emitter.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.8), NumberSequenceKeypoint.new(1, 0) })
+	emitter.Transparency = NumberSequence.new(0.1, 1)
+	emitter.Lifetime = NumberRange.new(0.4, 0.8)
+	emitter.Rate = 40
+	emitter.Speed = NumberRange.new(2, 5)
+	emitter.SpreadAngle = Vector2.new(180, 180)
+	emitter.Parent = root
+	task.delay(duration, function()
+		emitter.Enabled = false
+		Debris:AddItem(emitter, 1)
+	end)
+	if model == player.Character then
+		Fx.Sound("Whoosh", 1.2)
+	end
+end
+
+local shakeUntil = 0
+local shakeStrength = 0
+RunService:BindToRenderStep("SvMShake", Enum.RenderPriority.Camera.Value + 1, function()
+	local t = os.clock()
+	if t < shakeUntil then
+		local k = (shakeUntil - t) * shakeStrength
+		camera.CFrame *= CFrame.Angles(math.rad((math.random() - 0.5) * k), math.rad((math.random() - 0.5) * k), 0)
+	end
+end)
+
+function Fx.Shake(strength: number, duration: number)
+	shakeStrength = strength / duration
+	shakeUntil = os.clock() + duration
+end
+
+function Fx.Chomp(pos: Vector3)
+	Fx.Burst(pos, Color3.fromRGB(255, 60, 60), 9)
+	-- a little splash of bubbles
+	local p = Instance.new("Part")
+	p.Anchored = true
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.Transparency = 1
+	p.Size = Vector3.one
+	p.Position = pos
+	p.Parent = folder
+	local e = Instance.new("ParticleEmitter")
+	e.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+	e.Color = ColorSequence.new(Color3.fromRGB(220, 245, 255))
+	e.Size = NumberSequence.new(0.6, 0)
+	e.Lifetime = NumberRange.new(0.5, 1)
+	e.Speed = NumberRange.new(10, 20)
+	e.SpreadAngle = Vector2.new(60, 60)
+	e.Acceleration = Vector3.new(0, -30, 0)
+	e.Rate = 0
+	e.Parent = p
+	e:Emit(30)
+	Debris:AddItem(p, 1.5)
+
+	local char = player.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if root and (root.Position - pos).Magnitude < 40 then
+		Fx.Sound("Chomp")
+		Fx.Shake(6, 0.35)
+	end
+end
+
+local sonarHighlights: { Highlight } = {}
+function Fx.Sonar(duration: number)
+	for _, h in sonarHighlights do
+		h:Destroy()
+	end
+	table.clear(sonarHighlights)
+	local function mark(model: Model)
+		if model:GetAttribute("Role") == "Minnow" then
+			local h = Instance.new("Highlight")
+			h.FillColor = Color3.fromRGB(255, 220, 60)
+			h.FillTransparency = 0.3
+			h.OutlineColor = Color3.new(1, 1, 1)
+			h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+			h.Adornee = model
+			h.Parent = folder
+			table.insert(sonarHighlights, h)
+		end
+	end
+	for _, p in Players:GetPlayers() do
+		if p ~= player and p.Character then
+			mark(p.Character)
+		end
+	end
+	local bots = workspace:FindFirstChild("SvMBots")
+	if bots then
+		for _, m in bots:GetChildren() do
+			if m:IsA("Model") then
+				mark(m)
+			end
+		end
+	end
+	Fx.Sound("Tick", 0.6)
+	local mine = table.clone(sonarHighlights)
+	task.delay(duration, function()
+		for _, h in mine do
+			h:Destroy()
+		end
+	end)
+end
+
+local inkFrame: Frame? = nil
+function Fx.SetInkFrame(frame: Frame)
+	inkFrame = frame
+end
+
+function Fx.Inked(duration: number)
+	local frame = inkFrame
+	if not frame then
+		return
+	end
+	frame.Visible = true
+	frame.BackgroundTransparency = 0.05
+	TweenService:Create(frame, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { BackgroundTransparency = 1 }):Play()
+	task.delay(duration, function()
+		if frame.BackgroundTransparency > 0.95 then
+			frame.Visible = false
+		end
+	end)
+end
+
+return Fx
+]]></ProtectedString>
+         </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="RBX14">
+         <Properties>
+          <string name="Name">Hud</string>
+          <ProtectedString name="Source"><![CDATA[--!strict
+-- The in-game HUD. Everything here is driven by attributes the server sets on
+-- ReplicatedStorage (round state) and on the local Player (role, coins, cooldowns).
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+
+local Config = require(ReplicatedStorage.Shared.Config)
+local Ui = require(script.Parent.Ui)
+local Fx = require(script.Parent.Fx)
+
+local make = Ui.make
+local T = Ui.Theme
+
+local player = Players.LocalPlayer
+
+local Hud = {}
+
+local gui = make("ScreenGui", {
+	Name = "SvMHud", ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 5,
+	Parent = player:WaitForChild("PlayerGui"),
+})
+Hud.Gui = gui
+
+local overlay = make("ScreenGui", {
+	Name = "SvMOverlay", ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = 1, Parent = player.PlayerGui,
+})
+local ink = make("Frame", {
+	Name = "Ink", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(25, 10, 40), BackgroundTransparency = 1, Visible = false, Parent = overlay,
+})
+Fx.SetInkFrame(ink)
+
+-- Status bar ------------------------------------------------------------------------------------
+
+local status = make("Frame", {
+	Name = "Status", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 6), Size = UDim2.fromOffset(380, 70),
+	BackgroundColor3 = T.Panel, BackgroundTransparency = 0.1, Parent = gui,
+}, { Ui.corner(16), Ui.stroke(3) })
+local phaseLabel = Ui.label({ Name = "Phase", Position = UDim2.fromOffset(16, 6), Size = UDim2.new(1, -120, 0, 32), TextXAlignment = Enum.TextXAlignment.Left, Text = "WAITING", Parent = status })
+local timerLabel = Ui.label({ Name = "Timer", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 4), Size = UDim2.fromOffset(100, 36), TextXAlignment = Enum.TextXAlignment.Right, Text = "", TextColor3 = Color3.fromRGB(255, 230, 120), Parent = status })
+local countsLabel = Ui.label({ Name = "Counts", Position = UDim2.fromOffset(16, 40), Size = UDim2.new(1, -32, 0, 22), TextXAlignment = Enum.TextXAlignment.Left, Text = "", TextColor3 = T.Muted, Font = Ui.BodyFont, StrokeThickness = 1, Parent = status })
+
+local roleChip = make("Frame", {
+	Name = "Role", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 82), Size = UDim2.fromOffset(240, 32),
+	BackgroundColor3 = T.PanelLight, Parent = gui,
+}, { Ui.corner(16), Ui.stroke(2.5) })
+local roleLabel = Ui.label({ Size = UDim2.fromScale(1, 1), Text = "IN THE LOBBY", Parent = roleChip, StrokeThickness = 1.5 })
+make("UIPadding", { PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4), Parent = roleChip })
+
+local directionLabel = Ui.label({
+	Name = "Direction", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 120), Size = UDim2.fromOffset(420, 34),
+	Text = "", TextColor3 = Color3.fromRGB(140, 255, 180), StrokeThickness = 2.5, Parent = gui,
+})
+
+local countdown = Ui.label({
+	Name = "Countdown", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.38), Size = UDim2.fromOffset(300, 140),
+	Text = "", StrokeThickness = 5, Parent = gui,
+})
+
+-- Currency + menu buttons ------------------------------------------------------------------------
+
+local leftColumn = make("Frame", {
+	Name = "Left", Position = UDim2.fromOffset(12, 8), Size = UDim2.fromOffset(170, 300), BackgroundTransparency = 1, Parent = gui,
+}, { make("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }) })
+
+local function pill(order: number, icon: string, color: Color3): TextLabel
+	local f = make("Frame", { LayoutOrder = order, Size = UDim2.fromOffset(160, 38), BackgroundColor3 = T.Panel, BackgroundTransparency = 0.1, Parent = leftColumn }, { Ui.corner(19), Ui.stroke(2.5) })
+	Ui.label({ Position = UDim2.fromOffset(6, 4), Size = UDim2.fromOffset(30, 30), Text = icon, Parent = f })
+	return Ui.label({ Position = UDim2.fromOffset(42, 5), Size = UDim2.new(1, -54, 0, 28), Text = "0", TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = color, Parent = f })
+end
+local coinsLabel = pill(1, "🪙", Config.Colors.Coins)
+local gemsLabel = pill(2, "💎", Config.Colors.Gems)
+
+Hud.ShopButton = Ui.button({ LayoutOrder = 3, Size = UDim2.fromOffset(160, 44), Text = "🛒 SHOP", Parent = leftColumn }, Color3.fromRGB(255, 170, 40))
+Hud.CodesButton = Ui.button({ LayoutOrder = 4, Size = UDim2.fromOffset(160, 40), Text = "🎁 CODES", Parent = leftColumn }, Color3.fromRGB(150, 90, 230))
+Hud.SpectateButton = Ui.button({ LayoutOrder = 5, Size = UDim2.fromOffset(160, 40), Text = "👀 SPECTATE", Visible = false, Parent = leftColumn }, Color3.fromRGB(60, 150, 230))
+
+-- Ability + item bar -------------------------------------------------------------------------------
+
+local bar = make("Frame", {
+	Name = "Abilities", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -16), Size = UDim2.fromOffset(340, 100),
+	BackgroundTransparency = 1, Parent = gui,
+}, {
+	make("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		VerticalAlignment = Enum.VerticalAlignment.Bottom, Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder,
+	}),
+})
+
+type Slot = { Button: TextButton, Icon: TextLabel, Name: TextLabel, Key: TextLabel, Count: TextLabel?, Cooldown: Frame, CooldownText: TextLabel }
+
+local function slot(order: number, size: number, key: string, withCount: boolean): Slot
+	local b = make("TextButton", {
+		LayoutOrder = order, Size = UDim2.fromOffset(size, size), BackgroundColor3 = T.Panel, AutoButtonColor = true, Text = "", Parent = bar,
+	}, { Ui.corner(14), Ui.stroke(3) })
+	local icon = Ui.label({ AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.42), Size = UDim2.fromScale(0.55, 0.5), Text = "", Parent = b })
+	local name = Ui.label({ AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -4), Size = UDim2.new(1, -8, 0, 14), Text = "", Font = Ui.BodyFont, StrokeThickness = 1, Parent = b })
+	local keyChip = make("Frame", { Position = UDim2.fromOffset(-6, -6), Size = UDim2.fromOffset(24, 24), BackgroundColor3 = Color3.fromRGB(250, 250, 250), ZIndex = 3, Parent = b }, { Ui.corner(6), Ui.stroke(2) })
+	local keyLabel = make("TextLabel", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Font = Ui.Font, TextScaled = true, TextColor3 = T.Stroke, Text = key, ZIndex = 3, Parent = keyChip })
+	local count = nil
+	if withCount then
+		count = Ui.label({ AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -4, 0, 2), Size = UDim2.fromOffset(30, 18), Text = "0", TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 3, Parent = b })
+	end
+	local cd = make("Frame", {
+		AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.fromScale(1, 0), BackgroundColor3 = Color3.new(0, 0, 0),
+		BackgroundTransparency = 0.35, ZIndex = 2, Parent = b,
+	}, { Ui.corner(14) })
+	local cdText = Ui.label({ Size = UDim2.fromScale(1, 1), Text = "", ZIndex = 4, Parent = b })
+	return { Button = b, Icon = icon, Name = name, Key = keyLabel, Count = count, Cooldown = cd, CooldownText = cdText }
+end
+
+Hud.AbilitySlot = slot(1, 96, "E", false)
+Hud.ItemSlots = {} :: { [string]: Slot }
+for i, id in Config.ItemOrder do
+	local def = Config.Items[id]
+	local s = slot(i + 1, 70, def.Key, true)
+	s.Icon.Text = def.Icon
+	s.Name.Text = def.Name
+	s.Button.BackgroundColor3 = T.Panel
+	Hud.ItemSlots[id] = s
+end
+
+-- Banner, toasts, feed ---------------------------------------------------------------------------
+
+local bannerFrame = make("Frame", {
+	Name = "Banner", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.3), Size = UDim2.fromOffset(640, 120),
+	BackgroundTransparency = 1, Visible = false, Parent = gui,
+})
+local bannerTitle = Ui.label({ Size = UDim2.new(1, 0, 0, 70), Text = "", StrokeThickness = 4, Parent = bannerFrame })
+local bannerSub = Ui.label({ Position = UDim2.fromOffset(0, 74), Size = UDim2.new(1, 0, 0, 30), Text = "", Font = Ui.BodyFont, StrokeThickness = 2, Parent = bannerFrame })
+local bannerToken = 0
+
+function Hud.Banner(title: string, subtitle: string, color: Color3?)
+	bannerToken += 1
+	local token = bannerToken
+	bannerTitle.Text = title
+	bannerTitle.TextColor3 = color or T.Text
+	bannerSub.Text = subtitle
+	bannerFrame.Visible = true
+	bannerFrame.Size = UDim2.fromOffset(500, 90)
+	TweenService:Create(bannerFrame, TweenInfo.new(0.35, Enum.EasingStyle.Back), { Size = UDim2.fromOffset(640, 120) }):Play()
+	task.delay(3.5, function()
+		if bannerToken == token then
+			bannerFrame.Visible = false
+		end
+	end)
+end
+
+local toasts = make("Frame", {
+	Name = "Toasts", AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -14, 1, -130), Size = UDim2.fromOffset(330, 260),
+	BackgroundTransparency = 1, Parent = gui,
+}, {
+	make("UIListLayout", { VerticalAlignment = Enum.VerticalAlignment.Bottom, HorizontalAlignment = Enum.HorizontalAlignment.Right, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }),
+})
+local toastOrder = 0
+
+function Hud.Toast(text: string, color: Color3?)
+	toastOrder += 1
+	local f = make("Frame", {
+		LayoutOrder = toastOrder, Size = UDim2.fromOffset(320, 34), BackgroundColor3 = T.Panel, BackgroundTransparency = 0.15, Parent = toasts,
+	}, { Ui.corner(10), Ui.stroke(2) })
+	local l = Ui.label({ Position = UDim2.fromOffset(10, 5), Size = UDim2.new(1, -20, 1, -10), Text = text, TextColor3 = color or T.Text, TextXAlignment = Enum.TextXAlignment.Right, Font = Ui.BodyFont, StrokeThickness = 1, Parent = f })
+	local kids = toasts:GetChildren()
+	local frames = 0
+	for _, k in kids do
+		if k:IsA("Frame") then
+			frames += 1
+		end
+	end
+	if frames > 6 then
+		for _, k in kids do
+			if k:IsA("Frame") and k ~= f then
+				k:Destroy()
+				break
+			end
+		end
+	end
+	task.delay(3.5, function()
+		if f.Parent then
+			TweenService:Create(f, TweenInfo.new(0.4), { BackgroundTransparency = 1 }):Play()
+			TweenService:Create(l, TweenInfo.new(0.4), { TextTransparency = 1 }):Play()
+			task.wait(0.4)
+			f:Destroy()
+		end
+	end)
+end
+
+local feed = make("Frame", {
+	Name = "Feed", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 8), Size = UDim2.fromOffset(300, 200),
+	BackgroundTransparency = 1, Parent = gui,
+}, { make("UIListLayout", { HorizontalAlignment = Enum.HorizontalAlignment.Right, Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder }) })
+local feedOrder = 0
+
+function Hud.Feed(killer: string, victim: string, how: string)
+	feedOrder += 1
+	local text = if how == "timeout" then `⏱️ {victim} was too slow` else `🦈 {killer}  chomped  🐟 {victim}`
+	local f = make("Frame", { LayoutOrder = feedOrder, Size = UDim2.fromOffset(300, 28), BackgroundColor3 = Color3.fromRGB(60, 20, 30), BackgroundTransparency = 0.25, Parent = feed }, { Ui.corner(8) })
+	Ui.label({ Position = UDim2.fromOffset(8, 4), Size = UDim2.new(1, -16, 1, -8), Text = text, TextXAlignment = Enum.TextXAlignment.Right, Font = Ui.BodyFont, StrokeThickness = 1, Parent = f })
+	local frames = {}
+	for _, k in feed:GetChildren() do
+		if k:IsA("Frame") then
+			table.insert(frames, k)
+		end
+	end
+	if #frames > 5 then
+		table.sort(frames, function(a, b)
+			return a.LayoutOrder < b.LayoutOrder
+		end)
+		frames[1]:Destroy()
+	end
+	task.delay(6, function()
+		if f.Parent then
+			f:Destroy()
+		end
+	end)
+end
+
+-- Per-frame refresh --------------------------------------------------------------------------------
+
+local PHASE_TEXT = {
+	Waiting = "WAITING",
+	Intermission = "INTERMISSION",
+	Ready = "GET READY",
+	Crossing = "SWIM!",
+	Ended = "ROUND OVER",
+}
+
+local lastCount = -1
+
+local function setCooldown(s: Slot, readyAt: number, total: number, t: number)
+	local left = readyAt - t
+	if left > 0 and total > 0 then
+		s.Cooldown.Size = UDim2.fromScale(1, math.clamp(left / total, 0, 1))
+		s.CooldownText.Text = tostring(math.ceil(left))
+	else
+		s.Cooldown.Size = UDim2.fromScale(1, 0)
+		s.CooldownText.Text = ""
+	end
+end
+
+function Hud.Update()
+	local t = workspace:GetServerTimeNow()
+	local phase = ReplicatedStorage:GetAttribute("Phase") or "Waiting"
+	local endsAt = ReplicatedStorage:GetAttribute("PhaseEndsAt") or 0
+	local crossing = ReplicatedStorage:GetAttribute("Crossing") or 0
+	local maxCrossings = ReplicatedStorage:GetAttribute("MaxCrossings") or Config.MaxCrossings
+	local direction = ReplicatedStorage:GetAttribute("Direction") or 1
+	local role = player:GetAttribute("Role") or "Lobby"
+	local left = math.max(0, endsAt - t)
+
+	phaseLabel.Text = if phase == "Waiting" then (ReplicatedStorage:GetAttribute("Status") or "WAITING") else PHASE_TEXT[phase] or phase
+	timerLabel.Text = if endsAt > 0 and phase ~= "Waiting" then Ui.formatTime(left) else ""
+	if phase == "Ready" or phase == "Crossing" then
+		countsLabel.Text = `🐟 {ReplicatedStorage:GetAttribute("MinnowsLeft") or 0} minnows   🦈 {ReplicatedStorage:GetAttribute("SharksCount") or 0} sharks   ·   crossing {crossing}/{maxCrossings}`
+	elseif phase == "Intermission" then
+		countsLabel.Text = "Shop up while you wait!"
+	else
+		countsLabel.Text = ReplicatedStorage:GetAttribute("Status") or ""
+	end
+	timerLabel.TextColor3 = if phase == "Crossing" and left < 5 then T.Bad else Color3.fromRGB(255, 230, 120)
+
+	-- role chip
+	if role == "Shark" then
+		roleLabel.Text = "🦈 YOU'RE A SHARK"
+		roleChip.BackgroundColor3 = Color3.fromRGB(150, 40, 50)
+	elseif role == "Minnow" then
+		roleLabel.Text = "🐟 YOU'RE A MINNOW"
+		roleChip.BackgroundColor3 = Color3.fromRGB(220, 120, 30)
+	else
+		roleLabel.Text = if phase == "Ready" or phase == "Crossing" then "WATCHING · NEXT ROUND SOON" else "IN THE LOBBY"
+		roleChip.BackgroundColor3 = T.PanelLight
+	end
+
+	-- where to go
+	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local safe = root ~= nil and root.Position.X * direction > Config.SafeLine
+	if role == "Minnow" and (phase == "Ready" or phase == "Crossing") then
+		if phase == "Crossing" and safe then
+			directionLabel.Text = "✅ SAFE — hang tight"
+		else
+			directionLabel.Text = if direction > 0 then "SWIM TO THE EAST BEACH  ➜" else "⬅  SWIM TO THE WEST BEACH"
+		end
+	elseif role == "Shark" and phase == "Crossing" then
+		directionLabel.Text = "CHOMP THE MINNOWS!"
+	elseif role == "Shark" and phase == "Ready" then
+		directionLabel.Text = "Get ready to hunt…"
+	else
+		directionLabel.Text = ""
+	end
+
+	-- big countdown in the last 3 seconds of Ready
+	if phase == "Ready" and left <= 3.2 then
+		local n = math.ceil(left)
+		countdown.Text = tostring(n)
+		if n ~= lastCount and n > 0 then
+			lastCount = n
+			Fx.Sound("Tick")
+		end
+	else
+		countdown.Text = ""
+		lastCount = -1
+	end
+
+	-- currency
+	coinsLabel.Text = Ui.formatNumber(player:GetAttribute("Coins") or 0)
+	gemsLabel.Text = Ui.formatNumber(player:GetAttribute("Gems") or 0)
+
+	-- ability slot
+	local active = phase == "Crossing" and role ~= "Lobby"
+	local abilityId = if role == "Shark" then player:GetAttribute("EquippedShark") else player:GetAttribute("EquippedMinnow")
+	local def = Config.Abilities[abilityId or ""]
+	local a = Hud.AbilitySlot
+	a.Icon.Text = if def then def.Icon else "?"
+	a.Name.Text = if def then def.Name else ""
+	a.Button.BackgroundColor3 = if def and role ~= "Lobby" then def.Color:Lerp(T.Panel, 0.55) else T.Panel
+	setCooldown(a, player:GetAttribute("AbilityReadyAt") or 0, if def then def.Cooldown else 1, t)
+	a.Button.BackgroundTransparency = if active then 0 else 0.45
+
+	for id, s in Hud.ItemSlots do
+		local item = Config.Items[id]
+		local count = player:GetAttribute("Item_" .. id) or 0
+		local usable = active and count > 0 and (item.Role == "Any" or item.Role == role)
+		if s.Count then
+			s.Count.Text = "x" .. count
+		end
+		s.Button.BackgroundTransparency = if usable then 0 else 0.5
+		s.Button.BackgroundColor3 = if usable then item.Color:Lerp(T.Panel, 0.6) else T.Panel
+		setCooldown(s, player:GetAttribute("ItemReadyAt") or 0, Config.ItemCooldown, t)
+	end
+end
+
+return Hud
+]]></ProtectedString>
+         </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="RBX15">
+         <Properties>
+          <string name="Name">Shop</string>
+          <ProtectedString name="Source"><![CDATA[--!strict
+-- Shop (abilities, consumables, trails) and the codes window.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+
+local Config = require(ReplicatedStorage.Shared.Config)
+local Remotes = require(ReplicatedStorage.Shared.Remotes)
+local Ui = require(script.Parent.Ui)
+local Fx = require(script.Parent.Fx)
+local Hud = require(script.Parent.Hud)
+
+local make = Ui.make
+local T = Ui.Theme
+local player = Players.LocalPlayer
+
+local Shop = {}
+
+local function window(name: string, size: Vector2, title: string): (Frame, Frame)
+	local frame = make("Frame", {
+		Name = name, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.52), Size = UDim2.fromOffset(size.X, size.Y),
+		BackgroundColor3 = T.Panel, Visible = false, ZIndex = 10, Parent = Hud.Gui,
+	}, {
+		Ui.corner(18), Ui.stroke(4), Ui.gradient(Color3.fromRGB(255, 255, 255), Color3.fromRGB(170, 190, 210)),
+		make("UISizeConstraint", { MaxSize = Vector2.new(size.X, size.Y) }),
+	})
+	Ui.label({ Position = UDim2.fromOffset(20, 10), Size = UDim2.new(1, -90, 0, 40), Text = title, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 11, StrokeThickness = 3, Parent = frame })
+	local close = Ui.button({ AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 10), Size = UDim2.fromOffset(42, 42), Text = "X", ZIndex = 11, Parent = frame }, T.Bad)
+	close.Activated:Connect(function()
+		Fx.Sound("Click")
+		frame.Visible = false
+	end)
+	local body = make("Frame", { Name = "Body", Position = UDim2.fromOffset(16, 62), Size = UDim2.new(1, -32, 1, -78), BackgroundTransparency = 1, ZIndex = 11, Parent = frame })
+	return frame, body
+end
+
+local function pop(frame: GuiObject)
+	local final = frame.Size
+	frame.Size = UDim2.new(final.X.Scale * 0.9, final.X.Offset * 0.9, final.Y.Scale * 0.9, final.Y.Offset * 0.9)
+	TweenService:Create(frame, TweenInfo.new(0.25, Enum.EasingStyle.Back), { Size = final }):Play()
+end
+
+-- Shop ------------------------------------------------------------------------------------------------
+
+local shopFrame, shopBody = window("Shop", Vector2.new(660, 460), "🛒 SHOP")
+local tabs = make("Frame", { Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1, ZIndex = 11, Parent = shopBody }, {
+	make("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }),
+})
+local list = make("ScrollingFrame", {
+	Position = UDim2.fromOffset(0, 50), Size = UDim2.new(1, 0, 1, -50), BackgroundTransparency = 1, BorderSizePixel = 0,
+	ScrollBarThickness = 8, AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(), ZIndex = 11, Parent = shopBody,
+}, {
+	make("UIGridLayout", { CellSize = UDim2.fromOffset(195, 200), CellPadding = UDim2.fromOffset(10, 10), SortOrder = Enum.SortOrder.LayoutOrder }),
+	make("UIPadding", { PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 4) }),
+})
+
+local currentTab = "Abilities"
+local tabButtons: { [string]: TextButton } = {}
+
+local function buy(action: string, id: string)
+	Fx.Sound("Click")
+	local ok, message = Remotes.Shop:InvokeServer(action, id)
+	Hud.Toast(message, if ok then T.Good else T.Bad)
+end
+
+type CardInfo = { Icon: string, Name: string, Tag: string?, TagColor: Color3?, Desc: string, Color: Color3, ButtonText: string, ButtonColor: Color3, Enabled: boolean, OnClick: () -> () }
+
+local function card(order: number, info: CardInfo)
+	local c = make("Frame", { LayoutOrder = order, BackgroundColor3 = info.Color:Lerp(T.Panel, 0.65), ZIndex = 12, Parent = list }, { Ui.corner(14), Ui.stroke(2.5) })
+	Ui.label({ Position = UDim2.fromOffset(8, 8), Size = UDim2.new(1, -16, 0, 44), Text = info.Icon, ZIndex = 13, Parent = c })
+	Ui.label({ Position = UDim2.fromOffset(8, 54), Size = UDim2.new(1, -16, 0, 24), Text = info.Name, ZIndex = 13, Parent = c })
+	if info.Tag then
+		local tag = make("Frame", { Position = UDim2.fromOffset(8, 8), Size = UDim2.fromOffset(66, 20), BackgroundColor3 = info.TagColor or T.Accent, ZIndex = 14, Parent = c }, { Ui.corner(6) })
+		Ui.label({ Size = UDim2.fromScale(1, 1), Text = info.Tag, ZIndex = 15, StrokeThickness = 1, Parent = tag })
+	end
+	make("TextLabel", {
+		Position = UDim2.fromOffset(10, 80), Size = UDim2.new(1, -20, 0, 56), BackgroundTransparency = 1, Font = Ui.BodyFont, TextSize = 14,
+		TextWrapped = true, TextColor3 = T.Muted, Text = info.Desc, TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 13, Parent = c,
+	})
+	local b = Ui.button({
+		AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -10), Size = UDim2.new(1, -20, 0, 42),
+		Text = info.ButtonText, ZIndex = 13, AutoButtonColor = info.Enabled, Parent = c,
+	}, info.ButtonColor)
+	if info.Enabled then
+		b.Activated:Connect(info.OnClick)
+	end
+end
+
+local function refresh()
+	for _, c in list:GetChildren() do
+		if c:IsA("Frame") then
+			c:Destroy()
+		end
+	end
+	for name, b in tabButtons do
+		b.BackgroundColor3 = if name == currentTab then Color3.fromRGB(255, 170, 40) else T.PanelLight
+	end
+	local coins = player:GetAttribute("Coins") or 0
+	local gems = player:GetAttribute("Gems") or 0
+
+	if currentTab == "Abilities" then
+		for i, id in Config.AbilityOrder do
+			local def = Config.Abilities[id]
+			local owned = player:GetAttribute("Owns_" .. id) == true
+			local equipped = player:GetAttribute("Equipped" .. def.Role) == id
+			local text, color, enabled, action
+			if equipped then
+				text, color, enabled, action = "EQUIPPED", T.Good, false, ""
+			elseif owned then
+				text, color, enabled, action = "EQUIP", T.Accent, true, "EquipAbility"
+			else
+				text, color, enabled, action = `🪙 {def.Price}`, if coins >= def.Price then Color3.fromRGB(255, 190, 40) else Color3.fromRGB(110, 110, 120), true, "BuyAbility"
+			end
+			card(i, {
+				Icon = def.Icon, Name = def.Name, Tag = string.upper(def.Role), TagColor = if def.Role == "Shark" then Color3.fromRGB(190, 50, 60) else Color3.fromRGB(230, 130, 30),
+				Desc = `{def.Description}\nCooldown {def.Cooldown}s`, Color = def.Color, ButtonText = text, ButtonColor = color, Enabled = enabled,
+				OnClick = function()
+					buy(action, id)
+				end,
+			})
+		end
+	elseif currentTab == "Items" then
+		for i, id in Config.ItemOrder do
+			local def = Config.Items[id]
+			local have = player:GetAttribute("Item_" .. id) or 0
+			card(i, {
+				Icon = def.Icon, Name = `{def.Name}  (x{have})`, Tag = if def.Role == "Any" then "ANYONE" else string.upper(def.Role),
+				TagColor = if def.Role == "Shark" then Color3.fromRGB(190, 50, 60) elseif def.Role == "Minnow" then Color3.fromRGB(230, 130, 30) else Color3.fromRGB(70, 150, 90),
+				Desc = `{def.Description}\nPress {def.Key} to use.`, Color = def.Color,
+				ButtonText = `BUY 🪙 {def.Price}`, ButtonColor = if coins >= def.Price then Color3.fromRGB(255, 190, 40) else Color3.fromRGB(110, 110, 120), Enabled = true,
+				OnClick = function()
+					buy("BuyItem", id)
+				end,
+			})
+		end
+	else
+		for i, id in Config.TrailOrder do
+			local def = Config.Trails[id]
+			local owned = player:GetAttribute("OwnsTrail_" .. id) == true
+			local equipped = player:GetAttribute("Trail") == id
+			local text, color, action, arg
+			if equipped then
+				text, color, action, arg = "UNEQUIP", Color3.fromRGB(140, 140, 150), "EquipTrail", ""
+			elseif owned then
+				text, color, action, arg = "EQUIP", T.Accent, "EquipTrail", id
+			else
+				text, color, action, arg = `💎 {def.Price}`, if gems >= def.Price then Config.Colors.Gems else Color3.fromRGB(110, 110, 120), "BuyTrail", id
+			end
+			card(i, {
+				Icon = "✨", Name = def.Name, Desc = "A trail that follows you everywhere. Bought with gems from wins.",
+				Color = def.Colors[1], ButtonText = text, ButtonColor = color, Enabled = true,
+				OnClick = function()
+					buy(action, arg)
+				end,
+			})
+		end
+	end
+end
+
+for i, name in { "Abilities", "Items", "Trails" } do
+	local b = Ui.button({ LayoutOrder = i, Size = UDim2.fromOffset(150, 38), Text = name:upper(), ZIndex = 12, Parent = tabs }, T.PanelLight)
+	tabButtons[name] = b
+	b.Activated:Connect(function()
+		Fx.Sound("Click")
+		currentTab = name
+		refresh()
+	end)
+end
+
+player.AttributeChanged:Connect(function(attr)
+	if shopFrame.Visible and attr ~= "AbilityReadyAt" and attr ~= "ItemReadyAt" and attr ~= "ShieldUntil" then
+		refresh()
+	end
+end)
+
+-- Codes ---------------------------------------------------------------------------------------------
+
+local codesFrame, codesBody = window("Codes", Vector2.new(400, 230), "🎁 CODES")
+local box = make("TextBox", {
+	Size = UDim2.new(1, 0, 0, 50), BackgroundColor3 = Color3.fromRGB(240, 245, 250), Font = Ui.Font, TextScaled = true,
+	PlaceholderText = "Enter code", Text = "", TextColor3 = T.Stroke, ClearTextOnFocus = false, ZIndex = 12, Parent = codesBody,
+}, { Ui.corner(10), Ui.stroke(2.5), Ui.padding(8) })
+local result = Ui.label({ Position = UDim2.fromOffset(0, 58), Size = UDim2.new(1, 0, 0, 24), Text = "Codes drop with updates. Try SHARKBAIT!", Font = Ui.BodyFont, TextColor3 = T.Muted, StrokeThickness = 1, ZIndex = 12, Parent = codesBody })
+local redeem = Ui.button({ AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, 0), Size = UDim2.fromOffset(200, 46), Text = "REDEEM", ZIndex = 12, Parent = codesBody }, T.Good)
+redeem.Activated:Connect(function()
+	Fx.Sound("Click")
+	local ok, message = Remotes.RedeemCode:InvokeServer(box.Text)
+	result.Text = message
+	result.TextColor3 = if ok then T.Good else T.Bad
+	if ok then
+		box.Text = ""
+		Hud.Toast("🎁 " .. message, T.Good)
+	end
+end)
+
+-- Public ----------------------------------------------------------------------------------------------
+
+function Shop.ToggleShop()
+	Fx.Sound("Click")
+	codesFrame.Visible = false
+	shopFrame.Visible = not shopFrame.Visible
+	if shopFrame.Visible then
+		refresh()
+		pop(shopFrame)
+	end
+end
+
+function Shop.ToggleCodes()
+	Fx.Sound("Click")
+	shopFrame.Visible = false
+	codesFrame.Visible = not codesFrame.Visible
+	if codesFrame.Visible then
+		pop(codesFrame)
+	end
+end
+
+function Shop.CloseAll()
+	shopFrame.Visible = false
+	codesFrame.Visible = false
+end
+
+return Shop
+]]></ProtectedString>
+         </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="RBX16">
+         <Properties>
+          <string name="Name">Ui</string>
+          <ProtectedString name="Source"><![CDATA[--!strict
+-- Tiny helpers for building GUI in code.
+
+local Ui = {}
+
+Ui.Font = Enum.Font.FredokaOne
+Ui.BodyFont = Enum.Font.GothamMedium
+
+Ui.Theme = {
+	Panel = Color3.fromRGB(18, 38, 58),
+	PanelLight = Color3.fromRGB(30, 60, 88),
+	Stroke = Color3.fromRGB(10, 20, 32),
+	Text = Color3.fromRGB(245, 250, 255),
+	Muted = Color3.fromRGB(170, 195, 215),
+	Good = Color3.fromRGB(90, 220, 130),
+	Bad = Color3.fromRGB(255, 95, 95),
+	Accent = Color3.fromRGB(70, 190, 255),
+}
+
+-- make("Frame", { Size = ..., Parent = ... }, { children })
+function Ui.make(className: string, props: { [string]: any }?, children: { Instance }?): any
+	local inst = Instance.new(className)
+	local parent = nil
+	if props then
+		for k, v in props do
+			if k == "Parent" then
+				parent = v
+			else
+				(inst :: any)[k] = v
+			end
+		end
+	end
+	if children then
+		for _, c in children do
+			c.Parent = inst
+		end
+	end
+	if parent then
+		inst.Parent = parent
+	end
+	return inst
+end
+
+function Ui.corner(radius: number?): Instance
+	return Ui.make("UICorner", { CornerRadius = UDim.new(0, radius or 12) })
+end
+
+function Ui.stroke(thickness: number?, color: Color3?, transparency: number?): Instance
+	return Ui.make("UIStroke", {
+		Thickness = thickness or 2,
+		Color = color or Ui.Theme.Stroke,
+		Transparency = transparency or 0,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+	})
+end
+
+function Ui.textStroke(thickness: number?): Instance
+	return Ui.make("UIStroke", { Thickness = thickness or 2, Color = Ui.Theme.Stroke, ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual })
+end
+
+function Ui.padding(px: number): Instance
+	local u = UDim.new(0, px)
+	return Ui.make("UIPadding", { PaddingTop = u, PaddingBottom = u, PaddingLeft = u, PaddingRight = u })
+end
+
+function Ui.gradient(top: Color3, bottom: Color3): Instance
+	return Ui.make("UIGradient", { Color = ColorSequence.new(top, bottom), Rotation = 90 })
+end
+
+function Ui.label(props: { [string]: any }): TextLabel
+	local defaults = {
+		BackgroundTransparency = 1,
+		Font = Ui.Font,
+		TextColor3 = Ui.Theme.Text,
+		TextScaled = true,
+	}
+	for k, v in props do
+		defaults[k] = v
+	end
+	local children: { Instance } = { Ui.textStroke(props.StrokeThickness) }
+	defaults.StrokeThickness = nil
+	return Ui.make("TextLabel", defaults, children)
+end
+
+-- A chunky rounded button with a darker bottom edge.
+function Ui.button(props: { [string]: any }, color: Color3): TextButton
+	local defaults = {
+		AutoButtonColor = true,
+		BackgroundColor3 = color,
+		Font = Ui.Font,
+		TextColor3 = Ui.Theme.Text,
+		TextScaled = true,
+	}
+	for k, v in props do
+		defaults[k] = v
+	end
+	return Ui.make("TextButton", defaults, {
+		Ui.corner(10),
+		Ui.stroke(2.5),
+		Ui.gradient(Color3.new(1, 1, 1), Color3.fromRGB(190, 190, 190)),
+		Ui.textStroke(1.5),
+		Ui.make("UIPadding", { PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4), PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6) }),
+	})
+end
+
+function Ui.formatTime(seconds: number): string
+	seconds = math.max(0, math.ceil(seconds))
+	return string.format("%d:%02d", seconds // 60, seconds % 60)
+end
+
+function Ui.formatNumber(n: number): string
+	local s = tostring(math.floor(n))
+	local formatted = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+	if formatted:sub(1, 1) == "," then
+		formatted = formatted:sub(2)
+	end
+	return formatted
+end
+
+return Ui
+]]></ProtectedString>
+         </Properties>
+        </Item>
+      </Item>
+    </Item>
+  </Item>
+</roblox>

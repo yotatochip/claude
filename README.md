@@ -1,5 +1,7 @@
 # Gridiron Saturday 26
 
+> This repo also contains **Sharks Vs Minnows**, a Roblox tag game. See [`sharks-vs-minnows/`](sharks-vs-minnows/README.md).
+
 A 3D college football game that runs in the browser, inspired by the look and feel of EA Sports College Football 26. It plays full 11-on-11 football: you call plays from a playbook, read the coverage, throw to receivers, run the ball, and play defense, with downs, a game clock, special teams and college overtime.
 
 Everything you see is generated in code at load time. That covers the painted field, uniforms with numbers and nameplates, helmets, the stadium bowl, a 30,000-person crowd, lights and the video board. No image files are needed, so the game is a single HTML file.
