@@ -31,24 +31,24 @@ Beaches are safe zones: sharks physically can't step onto them, and nobody can b
 
 ## Controls and movement
 
-Movement works like Huss Valley. You build up speed and glide a few studs when you let go, sprinting runs on stamina, and you have vaults, side dashes, slides and an instant stop for juking. Minnows and sharks move the same way.
+Movement works like Huss Valley, and minnows and sharks move the same way. There's no sprint key and no jumping.
+
+- **Auto-sprint:** start running and you hit jog speed almost immediately. Keep running steadily in one direction for about a second and your momentum builds until you break into a sprint (the sprint animation kicks in, about 1.5× jog speed).
+- **Dash:** charges while you're sprinting. When the bar says *DASH READY*, press Space + A or D to burst sideways. Your sprint carries through the dash.
+- **Stopping:** let go and you glide about 7 studs on your momentum. Hold S (back against your momentum) to brake hard. Turning sharply, braking or stopping costs you your sprint.
 
 | Move | Keyboard | Gamepad | Mobile |
 | --- | --- | --- | --- |
-| Run | WASD | Left stick | Thumbstick |
-| Sprint (uses stamina) | Hold Shift | Click left stick (toggle) | SPRINT (toggle) |
-| Vault over low rocks and coral | Space | A | VAULT |
-| Side dash | Space while holding A or D | LB / RB | ◀ DASH / DASH ▶ |
-| Slide (while running) | C | B | SLIDE |
-| Instant stop (kill momentum) | Alt | D-pad down | STOP |
+| Run (sprint builds on its own) | WASD | Left stick | Thumbstick |
+| Side dash (while sprinting) | Space + A or D | A + stick left/right, or LB / RB | ◀ DASH / DASH ▶ |
+| Brake | Hold S | Pull the stick back | Pull the thumbstick back |
 | Shift lock | Left Ctrl (toggle) | — | — |
 | Ability | Q (or E) | X | Big ability button |
 | Speed Kelp / Lucky Pearl / Fishing Net | 1 / 2 / 3 | — | Item buttons |
 
-- **Stamina:** a full bar gives about 4 seconds of sprinting and refills in about 4.5 seconds. Run it dry and you're *winded* until it's 30% full again. Dashes, vaults and slides cost a little stamina too.
-- **Slides:** launch you faster than a sprint for about 16 studs, and sliding minnows are harder to chomp.
-- **Lunge:** the shark's Lunge has recovery frames, so a missed lunge leaves the shark slow for half a second. Bait it, then dash.
-- Every movement number is in `Config.Movement`.
+The shark's Lunge has recovery frames, so a missed lunge leaves the shark slow for half a second. Bait it, then dash.
+
+Every movement number, and the sprint animation, is in `Config.Movement`.
 
 ## Abilities
 
@@ -110,7 +110,7 @@ sharks-vs-minnows/
     │   └── PlayerData.luau    DataStore saving
     └── client/   → StarterPlayer.StarterPlayerScripts.Client
         ├── Client.client.luau input, remotes, spectating
-        ├── Movement.luau      momentum, sprint/stamina, vault, dash, slide, stop, shift lock
+        ├── Movement.luau      momentum, auto-sprint, charged dash, braking, shift lock
         ├── Hud.luau           status bar, timer, role, ability bar, banners, kill feed
         ├── Shop.luau          shop and codes windows
         ├── Fx.luau            particles, sounds, camera shake, sonar, ink

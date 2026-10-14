@@ -1,16 +1,15 @@
 --!strict
 -- Huss Valley-style movement for the local character.
 --
---   WASD            momentum: you build up to speed and glide a little when you let go
---   Shift (hold)    sprint, drains stamina
---   Space           vault over low obstacles (a small hop in the open)
---   Space + A / D   dash sideways
---   C               slide (while running)
---   Alt             instant stop: kills your momentum
---   Left Ctrl       toggle shift lock
+--   WASD            run. Keep running in one direction and momentum builds until you break
+--                   into a sprint on your own (no sprint key), with the sprint animation.
+--   Space + A / D   dash sideways. The dash only charges while you're sprinting.
+--   Let go          you keep gliding on your momentum for a moment.
+--   Hold S          brake: pulling back against your momentum stops you fast.
+--   Left Ctrl       toggle shift lock.
 --
--- The server sends a base speed (player attribute "MoveSpeed") that already includes ability
--- boosts, slows, nets and the pre-crossing freeze. Everything here builds on top of that.
+-- There is no jumping. The server sends a base speed (player attribute "MoveSpeed") that already
+-- includes ability boosts, slows, nets and the pre-crossing freeze; this builds on top of it.
 -- The default control script still reads the keys; this overrides what the humanoid is told.
 
 local ContextActionService = game:GetService("ContextActionService")
@@ -20,7 +19,6 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
-local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Fx = require(script.Parent.Fx)
 
 local M = Config.Movement
@@ -39,22 +37,16 @@ end)
 
 local Movement = {}
 
-Movement.Stamina = M.StaminaMax
-Movement.Exhausted = false
+Movement.Momentum = 0 -- 0..1; at 1 you're sprinting
 Movement.Sprinting = false
+Movement.DashCharge = 0 -- 0..1; fills while sprinting
 Movement.ShiftLock = false
-Movement.SprintToggle = false -- mobile / gamepad toggle
 
 local velocity = Vector3.zero -- the horizontal velocity we're steering the humanoid with
-local sprintHeld = false
-local lastDrainAt = 0
 local lastBase = Config.MinnowSpeed
-local slideUntil = 0
-local slideDir = Vector3.zero
-local nextSlide = 0
 local nextDash = 0
-local nextVault = 0
-local camOffsetY = 0
+local keepMomentumUntil = 0 -- a dash doesn't cost you your sprint
+local sprintTrack: AnimationTrack? = nil
 
 local function flat(v: Vector3): Vector3
 	return Vector3.new(v.X, 0, v.Z)
@@ -86,10 +78,6 @@ local function character(): (Model?, Humanoid?, BasePart?)
 	return char, h, root
 end
 
-local function grounded(h: Humanoid): boolean
-	return h.FloorMaterial ~= Enum.Material.Air
-end
-
 -- Raw stick / WASD input: X = right, Y = forward.
 local function rawInput(): Vector2
 	if controls then
@@ -114,26 +102,58 @@ local function rooted(): boolean
 	return player:GetAttribute("Rooted") == true
 end
 
-local function spend(cost: number): boolean
-	if Movement.Stamina < cost then
-		return false
+-- Sprint animation ------------------------------------------------------------------------------
+
+local function loadSprintAnimation(char: Model)
+	sprintTrack = nil
+	local h = char:WaitForChild("Humanoid", 10) :: Humanoid?
+	if not h then
+		return
 	end
-	Movement.Stamina -= cost
-	lastDrainAt = os.clock()
-	return true
+	local animator = h:WaitForChild("Animator", 10) :: Animator?
+	if not animator then
+		return
+	end
+	local anim = Instance.new("Animation")
+	anim.AnimationId = M.SprintAnimation
+	local ok, track = pcall(function()
+		return animator:LoadAnimation(anim)
+	end)
+	if ok and track then
+		track.Priority = Enum.AnimationPriority.Movement -- above the default run cycle
+		track.Looped = true
+		sprintTrack = track
+	end
 end
 
--- Actions -------------------------------------------------------------------------------------
+local function updateAnimation(speed: number)
+	local track = sprintTrack
+	if not track then
+		return
+	end
+	if Movement.Sprinting then
+		if not track.IsPlaying then
+			track:Play(0.25)
+		end
+		track:AdjustSpeed(math.clamp(speed / (lastBase * M.SprintMultiplier), 0.8, 1.4))
+	elseif track.IsPlaying then
+		track:Stop(0.25)
+	end
+end
+
+-- Dash ------------------------------------------------------------------------------------------
 
 function Movement.Dash(side: number)
 	local _, h, root = character()
-	if not h or not root or rooted() or os.clock() < nextDash or not grounded(h) then
+	if not h or not root or rooted() or os.clock() < nextDash then
 		return
 	end
-	if not spend(M.DashCost) then
-		return
+	if Movement.DashCharge < 1 then
+		return -- only a full sprint charges the dash
 	end
+	Movement.DashCharge = 0
 	nextDash = os.clock() + M.DashCooldown
+	keepMomentumUntil = os.clock() + 0.5
 	local _, right = cameraAxes()
 	if Movement.ShiftLock then
 		right = unitOr(flat(root.CFrame.RightVector), right)
@@ -144,62 +164,6 @@ function Movement.Dash(side: number)
 	Fx.Sound("Whoosh", 1.35)
 end
 
-function Movement.Vault()
-	local char, h, root = character()
-	if not char or not h or not root or rooted() or os.clock() < nextVault or not grounded(h) then
-		return
-	end
-	local forward = unitOr(flat(velocity), flat(root.CFrame.LookVector))
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { char }
-	local feet = root.Position - Vector3.new(0, h.HipHeight + root.Size.Y / 2, 0)
-	local low = workspace:Raycast(feet + Vector3.new(0, 1, 0), forward * 5, params)
-	local clear = workspace:Raycast(feet + Vector3.new(0, M.VaultMaxHeight, 0), forward * 6, params)
-	nextVault = os.clock() + M.VaultCooldown
-	if low and not clear and low.Instance.CanCollide then
-		if not spend(M.VaultCost) then
-			return
-		end
-		-- Vault: up and over, carrying (and slightly boosting) your speed.
-		local speed = math.max(flat(velocity).Magnitude, baseSpeed()) * 1.1
-		velocity = forward * speed
-		root.AssemblyLinearVelocity = forward * speed + Vector3.new(0, M.VaultUp, 0)
-		h:ChangeState(Enum.HumanoidStateType.Freefall)
-		Fx.Sound("Whoosh", 0.9)
-	elseif h.JumpHeight > 0 then
-		h:ChangeState(Enum.HumanoidStateType.Jumping)
-	end
-end
-
-function Movement.Slide()
-	local _, h, root = character()
-	local t = os.clock()
-	if not h or not root or rooted() or t < nextSlide or not grounded(h) then
-		return
-	end
-	local speed = flat(velocity).Magnitude
-	if speed < M.SlideMinSpeed or not spend(M.SlideCost) then
-		return
-	end
-	nextSlide = t + M.SlideCooldown
-	slideUntil = t + M.SlideTime
-	slideDir = unitOr(flat(velocity), flat(root.CFrame.LookVector))
-	velocity = slideDir * math.max(speed, baseSpeed() * M.SprintMultiplier) * M.SlideBoost
-	Remotes.Move:FireServer("Slide")
-	Fx.Sound("Whoosh", 0.75)
-end
-
-function Movement.Stop()
-	velocity = Vector3.zero
-	slideUntil = 0
-	local _, _, root = character()
-	if root then
-		local v = root.AssemblyLinearVelocity
-		root.AssemblyLinearVelocity = Vector3.new(0, v.Y, 0)
-	end
-end
-
 function Movement.ToggleShiftLock()
 	Movement.ShiftLock = not Movement.ShiftLock
 	if not Movement.ShiftLock then
@@ -208,20 +172,14 @@ function Movement.ToggleShiftLock()
 	Fx.Sound("Click")
 end
 
-function Movement.SetSprintToggle(on: boolean)
-	Movement.SprintToggle = on
-end
-
 -- Per-frame controller -----------------------------------------------------------------------
 
-local function isSliding(): boolean
-	return os.clock() < slideUntil
-end
-
 local function step(dt: number)
-	local char, h, root = character()
-	if not char or not h or not root then
+	local _, h, root = character()
+	if not h or not root then
 		velocity = Vector3.zero
+		Movement.Momentum = 0
+		Movement.Sprinting = false
 		return
 	end
 	local t = os.clock()
@@ -242,44 +200,50 @@ local function step(dt: number)
 	if wish.Magnitude > 1 then
 		wish = wish.Unit
 	end
+	local pushing = wish.Magnitude > 0.1
+	local speedNow = velocity.Magnitude
+	local alignment = if pushing and speedNow > 0.5 then wish.Unit:Dot(velocity / speedNow) else 0
+	local braking = pushing and speedNow > 2 and alignment < -0.3
 
-	-- stamina + sprint
-	if Movement.Exhausted and Movement.Stamina >= M.ExhaustRecover then
-		Movement.Exhausted = false
+	-- Momentum: running steadily one way at full jog builds it; turning hard, braking or
+	-- letting go bleeds it away. Full momentum = sprint.
+	if held then
+		Movement.Momentum = 0
+	elseif pushing and alignment > 0.75 and speedNow >= base * 0.9 then
+		Movement.Momentum = math.min(1, Movement.Momentum + dt / M.SprintBuildTime)
+	elseif t > keepMomentumUntil then
+		local loss = if braking then 4 elseif pushing then M.MomentumLoss else M.MomentumLoss * 1.5
+		Movement.Momentum = math.max(0, Movement.Momentum - loss * dt)
 	end
-	local wantsSprint = sprintHeld or Movement.SprintToggle
-	Movement.Sprinting = wantsSprint and wish.Magnitude > 0.1 and not Movement.Exhausted and not held
 	if Movement.Sprinting then
-		Movement.Stamina -= M.SprintDrain * dt
-		lastDrainAt = t
-		if Movement.Stamina <= 0 then
-			Movement.Stamina = 0
-			Movement.Exhausted = true
-		end
-	elseif t - lastDrainAt > M.RegenDelay then
-		Movement.Stamina = math.min(M.StaminaMax, Movement.Stamina + M.StaminaRegen * dt)
+		Movement.Sprinting = Movement.Momentum > 0.6 and not held
+	else
+		Movement.Sprinting = Movement.Momentum >= 1
 	end
 
-	local sliding = t < slideUntil
-	local onGround = grounded(h)
+	-- The dash charges while you sprint, and drains away if you stop sprinting.
+	if Movement.Sprinting then
+		Movement.DashCharge = math.min(1, Movement.DashCharge + dt / M.DashChargeTime)
+	else
+		Movement.DashCharge = math.max(0, Movement.DashCharge - dt / M.DashChargeTime * 0.5)
+	end
+
 	if held then
 		velocity = Vector3.zero
-		slideUntil = 0
-		sliding = false
-	elseif sliding then
-		-- committed to the slide: glide in a straight line, bleeding speed
-		local floor = base * 0.8
-		local speed = math.max(floor, velocity.Magnitude - M.SlideDecel * dt)
-		velocity = slideDir * speed
 	else
-		local target = wish * base * (if Movement.Sprinting then M.SprintMultiplier else 1)
-		local rate = if wish.Magnitude > 0.05 then M.Accel else M.Decel
-		-- above your normal top speed (after a dash or slide), ease back down gently
-		if velocity.Magnitude > target.Magnitude + 1 and wish.Magnitude > 0.05 then
-			rate = math.max(M.Decel, M.Accel * 0.6)
-		end
-		if not onGround then
-			rate *= M.AirControl
+		local top = base * (1 + (M.SprintMultiplier - 1) * (if Movement.Sprinting then 1 else Movement.Momentum * 0.3))
+		local target = wish * top
+		local rate
+		if braking then
+			rate = M.Brake
+		elseif not pushing then
+			rate = M.Glide
+		elseif velocity.Magnitude > top + 1 then
+			rate = M.Glide -- easing back down after a dash or ability burst
+		elseif Movement.Sprinting and velocity.Magnitude > base then
+			rate = M.SprintAccel
+		else
+			rate = M.Accel
 		end
 		velocity = moveToward(velocity, target, rate * dt)
 	end
@@ -287,29 +251,29 @@ local function step(dt: number)
 	local speed = velocity.Magnitude
 	h.WalkSpeed = speed
 	h:Move(if speed > 0.05 then velocity / speed else Vector3.zero, false)
+	-- no jumping in Sharks Vs Minnows
 	if h.UseJumpPower then
 		h.UseJumpPower = false
 	end
-	h.JumpHeight = if held then 0 else 4.5
+	if h.JumpHeight ~= 0 then
+		h.JumpHeight = 0
+	end
 
 	local wantLock = Movement.ShiftLock and not UserInputService.TouchEnabled
-	h.AutoRotate = not (wantLock or sliding)
-	if sliding then
-		root.CFrame = CFrame.lookAt(root.Position, root.Position + slideDir)
-	end
-	camOffsetY += ((if sliding then -1.6 else 0) - camOffsetY) * math.min(1, dt * 14)
-	h.CameraOffset = Vector3.new(if wantLock then M.ShiftLockOffset else 0, camOffsetY, 0)
+	h.AutoRotate = not wantLock
+	h.CameraOffset = Vector3.new(if wantLock then M.ShiftLockOffset else 0, 0, 0)
 
-	-- sprint FOV kick
-	local over = math.clamp((speed - base) / math.max(base * (M.SprintMultiplier - 1), 1), 0, 1)
-	local fov = M.FovBase + (M.FovSprint - M.FovBase) * over
-	camera.FieldOfView += (fov - camera.FieldOfView) * math.min(1, dt * 8)
+	updateAnimation(speed)
+
+	-- FOV opens up as you hit full sprint
+	local fov = M.FovBase + (M.FovSprint - M.FovBase) * (if Movement.Sprinting then 1 else 0)
+	camera.FieldOfView += (fov - camera.FieldOfView) * math.min(1, dt * 5)
 end
 
 -- Shift lock runs after the camera has updated: lock the mouse to the center and turn the
 -- body to face where the camera looks (the over-the-shoulder offset is set in step()).
 local function shiftLockStep()
-	if not Movement.ShiftLock or UserInputService.TouchEnabled or isSliding() then
+	if not Movement.ShiftLock or UserInputService.TouchEnabled then
 		return
 	end
 	local _, h, root = character()
@@ -323,77 +287,47 @@ end
 
 -- Input -------------------------------------------------------------------------------------------
 
-local function begin(state: Enum.UserInputState): boolean
-	return state == Enum.UserInputState.Begin
-end
-
 function Movement.Start()
 	RunService:BindToRenderStep("SvMMovement", Enum.RenderPriority.Input.Value + 1, step)
 	RunService:BindToRenderStep("SvMShiftLock", Enum.RenderPriority.Camera.Value + 2, shiftLockStep)
 
-	ContextActionService:BindActionAtPriority("SvMSprint", function(_, state)
+	-- Space only dashes (with A or D held). It never jumps.
+	ContextActionService:BindActionAtPriority("SvMDash", function(_, state)
 		if state == Enum.UserInputState.Begin then
-			sprintHeld = true
-		elseif state == Enum.UserInputState.End or state == Enum.UserInputState.Cancel then
-			sprintHeld = false
-		end
-		return Enum.ContextActionResult.Sink
-	end, false, Enum.ContextActionPriority.High.Value, Enum.KeyCode.LeftShift, Enum.KeyCode.RightShift)
-
-	-- Space replaces the normal jump: dash if A/D is held, otherwise vault.
-	ContextActionService:BindActionAtPriority("SvMVault", function(_, state)
-		if begin(state) then
 			local x = rawInput().X
 			if math.abs(x) > 0.5 then
 				Movement.Dash(math.sign(x))
-			else
-				Movement.Vault()
 			end
 		end
 		return Enum.ContextActionResult.Sink
 	end, false, Enum.ContextActionPriority.High.Value, Enum.KeyCode.Space, Enum.KeyCode.ButtonA)
 
-	ContextActionService:BindActionAtPriority("SvMSlide", function(_, state)
-		if begin(state) then
-			Movement.Slide()
-		end
-		return Enum.ContextActionResult.Sink
-	end, false, Enum.ContextActionPriority.High.Value, Enum.KeyCode.C, Enum.KeyCode.ButtonB)
-
-	ContextActionService:BindActionAtPriority("SvMStop", function(_, state)
-		if begin(state) then
-			Movement.Stop()
-		end
-		return Enum.ContextActionResult.Sink
-	end, false, Enum.ContextActionPriority.High.Value, Enum.KeyCode.LeftAlt, Enum.KeyCode.RightAlt, Enum.KeyCode.DPadDown)
-
 	ContextActionService:BindActionAtPriority("SvMShiftLock", function(_, state)
-		if begin(state) then
+		if state == Enum.UserInputState.Begin then
 			Movement.ToggleShiftLock()
 		end
 		return Enum.ContextActionResult.Sink
 	end, false, Enum.ContextActionPriority.High.Value, Enum.KeyCode.LeftControl)
 
-	-- Gamepad: click the left stick to toggle sprint, bumpers dash.
-	ContextActionService:BindActionAtPriority("SvMPadSprint", function(_, state)
-		if begin(state) then
-			Movement.SprintToggle = not Movement.SprintToggle
-		end
-		return Enum.ContextActionResult.Sink
-	end, false, Enum.ContextActionPriority.High.Value, Enum.KeyCode.ButtonL3)
+	-- Gamepad bumpers dash too.
 	ContextActionService:BindActionAtPriority("SvMPadDash", function(_, state, input)
-		if begin(state) then
+		if state == Enum.UserInputState.Begin then
 			Movement.Dash(if input.KeyCode == Enum.KeyCode.ButtonL1 then -1 else 1)
 		end
 		return Enum.ContextActionResult.Sink
 	end, false, Enum.ContextActionPriority.High.Value, Enum.KeyCode.ButtonL1, Enum.KeyCode.ButtonR1)
 
-	player.CharacterAdded:Connect(function()
+	local function onCharacter(char: Model)
 		velocity = Vector3.zero
-		slideUntil = 0
-		Movement.Stamina = M.StaminaMax
-		Movement.Exhausted = false
-	end)
+		Movement.Momentum = 0
+		Movement.DashCharge = 0
+		Movement.Sprinting = false
+		task.spawn(loadSprintAnimation, char)
+	end
+	player.CharacterAdded:Connect(onCharacter)
+	if player.Character then
+		onCharacter(player.Character)
+	end
 end
 
 return Movement

@@ -122,44 +122,51 @@ for i, id in Config.ItemOrder do
 	Hud.ItemSlots[id] = s
 end
 
--- Stamina ----------------------------------------------------------------------------------------------
+-- Momentum / dash ---------------------------------------------------------------------------------------
 
-local staminaFrame = make("Frame", {
-	Name = "Stamina", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -124), Size = UDim2.fromOffset(320, 16),
+local momentumFrame = make("Frame", {
+	Name = "Momentum", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -124), Size = UDim2.fromOffset(320, 16),
 	BackgroundColor3 = T.Panel, BackgroundTransparency = 0.15, Parent = gui,
 }, { Ui.corner(8), Ui.stroke(2.5) })
-local staminaFill = make("Frame", {
-	Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(110, 230, 255), Parent = staminaFrame,
+local momentumFill = make("Frame", {
+	Size = UDim2.fromScale(0, 1), BackgroundColor3 = Color3.fromRGB(110, 230, 255), Parent = momentumFrame,
 }, { Ui.corner(8), Ui.gradient(Color3.new(1, 1, 1), Color3.fromRGB(170, 170, 170)) })
-local staminaText = Ui.label({
-	AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 0, -2), Size = UDim2.fromOffset(200, 16),
-	Text = "STAMINA", Font = Ui.BodyFont, StrokeThickness = 1, Parent = staminaFrame,
+local momentumText = Ui.label({
+	AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 0, -2), Size = UDim2.fromOffset(260, 16),
+	Text = "MOMENTUM", Font = Ui.BodyFont, StrokeThickness = 1, Parent = momentumFrame,
 })
 
-function Hud.SetStamina(fraction: number, exhausted: boolean, sprinting: boolean)
-	staminaFill.Size = UDim2.fromScale(math.clamp(fraction, 0, 1), 1)
-	staminaFill.BackgroundColor3 = if exhausted then T.Bad elseif sprinting then Color3.fromRGB(255, 210, 80) else Color3.fromRGB(110, 230, 255)
-	staminaText.Text = if exhausted then "WINDED" elseif sprinting then "SPRINTING" else "STAMINA"
-	staminaText.TextColor3 = if exhausted then T.Bad else T.Text
+-- Before the sprint the bar shows momentum building; once sprinting it shows the dash charging.
+function Hud.SetMomentum(momentum: number, sprinting: boolean, dashCharge: number)
+	if sprinting then
+		local ready = dashCharge >= 1
+		momentumFill.Size = UDim2.fromScale(math.clamp(dashCharge, 0, 1), 1)
+		momentumFill.BackgroundColor3 = if ready then Color3.fromRGB(120, 255, 160) else Color3.fromRGB(255, 210, 80)
+		momentumText.Text = if ready then "SPRINTING · DASH READY (Space + A/D)" else "SPRINTING · DASH CHARGING"
+	else
+		momentumFill.Size = UDim2.fromScale(math.clamp(momentum, 0, 1), 1)
+		momentumFill.BackgroundColor3 = Color3.fromRGB(110, 230, 255)
+		momentumText.Text = "MOMENTUM"
+	end
 end
 
 Ui.label({
 	Name = "Keys", AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 12, 1, -10), Size = UDim2.fromOffset(560, 18),
 	TextXAlignment = Enum.TextXAlignment.Left, Font = Ui.BodyFont, StrokeThickness = 1, TextColor3 = T.Muted,
-	Text = "Shift sprint · Space vault · Space+A/D dash · C slide · Alt stop · Ctrl shift lock · Q ability",
+	Text = "Keep running to sprint · Space+A/D dash while sprinting · hold S to brake · Ctrl shift lock · Q ability",
 	Visible = not UserInputService.TouchEnabled, Parent = gui,
 })
 
--- Touch controls for the movement moves (phones and tablets only).
+-- Dash buttons for phones and tablets.
 Hud.Touch = {} :: { [string]: TextButton }
 if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
 	local pad = make("Frame", {
-		Name = "TouchMoves", AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -150, 1, -150), Size = UDim2.fromOffset(150, 210),
+		Name = "TouchMoves", AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -150, 1, -60), Size = UDim2.fromOffset(150, 62),
 		BackgroundTransparency = 1, Parent = gui,
 	}, {
 		make("UIGridLayout", { CellSize = UDim2.fromOffset(70, 62), CellPadding = UDim2.fromOffset(8, 8), SortOrder = Enum.SortOrder.LayoutOrder }),
 	})
-	for i, info in { { "Sprint", "SPRINT" }, { "Slide", "SLIDE" }, { "DashL", "◀ DASH" }, { "DashR", "DASH ▶" }, { "Vault", "VAULT" }, { "Stop", "STOP" } } do
+	for i, info in { { "DashL", "◀ DASH" }, { "DashR", "DASH ▶" } } do
 		Hud.Touch[info[1]] = Ui.button({ LayoutOrder = i, Text = info[2], BackgroundTransparency = 0.15, Parent = pad }, T.PanelLight)
 	end
 end

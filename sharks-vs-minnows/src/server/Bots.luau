@@ -32,6 +32,7 @@ local SHIRT = {
 local ANIM: { [string]: string } = {
 	Idle = "rbxassetid://507766666",
 	Run = "rbxassetid://913376220",
+	Sprint = Config.Movement.SprintAnimation,
 }
 
 local folder = Instance.new("Folder")
@@ -101,8 +102,8 @@ local function animate(e: Entity, root: BasePart)
 		return
 	end
 	local v = root.AssemblyLinearVelocity
-	local moving = Vector3.new(v.X, 0, v.Z).Magnitude > 2
-	local want = if moving then "Run" else "Idle"
+	local speed = Vector3.new(v.X, 0, v.Z).Magnitude
+	local want = if speed > Config.MinnowSpeed * 1.12 and tracks.Sprint then "Sprint" elseif speed > 2 then "Run" else "Idle"
 	if e.Bot.Playing ~= want then
 		local old = tracks[e.Bot.Playing]
 		if old then

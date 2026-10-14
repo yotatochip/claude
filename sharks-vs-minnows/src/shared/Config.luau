@@ -24,40 +24,29 @@ Config.LobbySpeed = 16
 Config.TagRange = 4.6 -- studs between root parts that counts as a chomp
 Config.TagGrace = 1.0 -- seconds a brand-new shark can't tag (no instant chain tags)
 
--- Huss Valley-style movement: momentum, stamina sprint, vault, lateral dash, slide,
--- instant stop and shift lock. The client runs it; the server sends the base speed.
+-- Huss Valley-style movement (client side, see Movement.luau). There's no sprint key: run
+-- steadily one way and momentum builds into a sprint, which is also what charges the dash.
+-- Let go and you glide; hold the opposite direction (S) to brake. No jumping.
 Config.Movement = {
 	SprintMultiplier = 1.5, -- jog 16 -> sprint 24
-	StaminaMax = 100,
-	SprintDrain = 24, -- per second of sprinting (about 4 seconds from full)
-	StaminaRegen = 22, -- per second once you stop sprinting
-	RegenDelay = 0.9,
-	ExhaustRecover = 30, -- after running dry, sprint unlocks again at this much stamina
+	SprintBuildTime = 1.0, -- seconds of steady running at full jog before you break into a sprint
+	MomentumLoss = 1.6, -- per second while turning hard (more when you let go, most when braking)
 
-	Accel = 80, -- studs/s² when pushing a direction
-	Decel = 45, -- studs/s² when you let go: you glide a few studs before stopping
-	AirControl = 0.35,
+	Accel = 70, -- studs/s² up to jog speed
+	SprintAccel = 16, -- studs/s² from jog up to sprint speed, so the sprint visibly winds up
+	Glide = 38, -- studs/s² when you let go: you carry a few studs of momentum
+	Brake = 95, -- studs/s² when you hold the opposite direction (S)
 
 	DashSpeed = 34, -- Space + A/D: sideways burst
-	DashCost = 15,
-	DashCooldown = 0.8,
+	DashChargeTime = 0.6, -- seconds of sprinting to charge it
+	DashCooldown = 0.6,
 
-	VaultUp = 36, -- Space near a low obstacle hops you over it
-	VaultMaxHeight = 7.5,
-	VaultCost = 8,
-	VaultCooldown = 0.5,
-
-	SlideBoost = 1.2, -- C while running: a low slide faster than your sprint
-	SlideTime = 0.7,
-	SlideDecel = 14,
-	SlideMinSpeed = 12,
-	SlideCost = 10,
-	SlideCooldown = 1.1,
-	SlideTagReduction = 1.2, -- sliding minnows are harder to chomp
+	-- Roblox's Ninja Run catalog animation; swap for any run animation you like.
+	SprintAnimation = "rbxassetid://656118852",
 
 	ShiftLockOffset = 1.75,
 	FovBase = 70,
-	FovSprint = 82,
+	FovSprint = 80,
 }
 
 -- Map layout (the arena runs along the X axis) --------------------------------

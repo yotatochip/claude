@@ -66,14 +66,7 @@ Hud.AbilitySlot.Button.Activated:Connect(useAbility)
 Movement.Start()
 
 local touch = Hud.Touch
-if touch.Sprint then
-	touch.Sprint.Activated:Connect(function()
-		Movement.SetSprintToggle(not Movement.SprintToggle)
-		touch.Sprint.BackgroundColor3 = if Movement.SprintToggle then Color3.fromRGB(255, 190, 40) else Ui.Theme.PanelLight
-	end)
-	touch.Slide.Activated:Connect(Movement.Slide)
-	touch.Vault.Activated:Connect(Movement.Vault)
-	touch.Stop.Activated:Connect(Movement.Stop)
+if touch.DashL then
 	touch.DashL.Activated:Connect(function()
 		Movement.Dash(-1)
 	end)
@@ -199,7 +192,7 @@ end)
 
 RunService.RenderStepped:Connect(function()
 	Hud.Update()
-	Hud.SetStamina(Movement.Stamina / Config.Movement.StaminaMax, Movement.Exhausted, Movement.Sprinting)
+	Hud.SetMomentum(Movement.Momentum, Movement.Sprinting, Movement.DashCharge)
 	local phase = ReplicatedStorage:GetAttribute("Phase")
 	Hud.SpectateButton.Visible = player:GetAttribute("Role") == "Lobby" and (phase == "Ready" or phase == "Crossing")
 end)

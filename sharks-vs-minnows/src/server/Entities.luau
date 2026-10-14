@@ -3,7 +3,6 @@
 -- through this module: roles, speed effects, shields, appearance and per-round stats.
 
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
@@ -24,8 +23,6 @@ export type Entity = {
 	ShieldUntil: number, -- bubble shield: any number of chomps bounce
 	PearlUntil: number, -- pearl: blocks exactly one chomp
 	RootedUntil: number, -- caught in a net
-	SlidingUntil: number, -- mid-slide (a little harder to chomp)
-	LastSlideAt: number,
 	SharkSince: number,
 	BiteBonus: number, -- extra tag range (Frenzy)
 	BiteBonusUntil: number,
@@ -61,8 +58,6 @@ local function new(name: string, player: Player?, isBot: boolean): Entity
 		ShieldUntil = 0,
 		PearlUntil = 0,
 		RootedUntil = 0,
-		SlidingUntil = 0,
-		LastSlideAt = 0,
 		SharkSince = 0,
 		BiteBonus = 0,
 		BiteBonusUntil = 0,
@@ -213,13 +208,12 @@ function Entities.UpdateMovement()
 		if math.abs(h.WalkSpeed - speed) > 0.05 then
 			h.WalkSpeed = speed
 		end
-		local canJump = not (e.Frozen or e.RootedUntil > t)
+		-- nobody jumps in Sharks Vs Minnows
 		if h.UseJumpPower then
 			h.UseJumpPower = false
 		end
-		local jump = if canJump then 7.2 else 0
-		if h.JumpHeight ~= jump then
-			h.JumpHeight = jump
+		if h.JumpHeight ~= 0 then
+			h.JumpHeight = 0
 		end
 	end
 end
@@ -387,37 +381,6 @@ function Entities.ApplyTrail(e: Entity, trailId: string)
 	trail.Transparency = NumberSequence.new(0.2, 1)
 	trail.FaceCamera = true
 	trail.Parent = root
-end
-
--- Leans the character back into a baseball slide. Done on the server so everyone sees it.
-function Entities.Slide(e: Entity)
-	local t = now()
-	if t - e.LastSlideAt < Config.Movement.SlideCooldown * 0.8 then
-		return
-	end
-	e.LastSlideAt = t
-	e.SlidingUntil = t + Config.Movement.SlideTime
-	local model = e.Model
-	local lower = model and model:FindFirstChild("LowerTorso")
-	local joint = lower and lower:FindFirstChild("Root")
-	if not (joint and joint:IsA("Motor6D")) then
-		return
-	end
-	local rest = joint:GetAttribute("RestC0")
-	if typeof(rest) ~= "CFrame" then
-		rest = joint.C0
-		joint:SetAttribute("RestC0", rest)
-	end
-	local restC0 = rest :: CFrame
-	local lean = TweenService:Create(joint, TweenInfo.new(0.12, Enum.EasingStyle.Quad), {
-		C0 = restC0 * CFrame.new(0, -1.1, 0) * CFrame.Angles(math.rad(55), 0, 0),
-	})
-	lean:Play()
-	task.delay(Config.Movement.SlideTime, function()
-		if joint.Parent then
-			TweenService:Create(joint, TweenInfo.new(0.18, Enum.EasingStyle.Quad), { C0 = restC0 }):Play()
-		end
-	end)
 end
 
 function Entities.ResetRoundState(e: Entity)
