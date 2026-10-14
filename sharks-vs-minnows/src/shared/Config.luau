@@ -17,11 +17,48 @@ Config.BotsEnabled = true
 Config.BotFillTarget = 8 -- top the round up to this many participants
 
 -- Movement ---------------------------------------------------------------------
-Config.MinnowSpeed = 20
-Config.SharkSpeed = 21
-Config.LobbySpeed = 18
+-- These are jogging speeds. Holding sprint multiplies them (see Config.Movement).
+Config.MinnowSpeed = 16
+Config.SharkSpeed = 16.5
+Config.LobbySpeed = 16
 Config.TagRange = 4.6 -- studs between root parts that counts as a chomp
 Config.TagGrace = 1.0 -- seconds a brand-new shark can't tag (no instant chain tags)
+
+-- Huss Valley-style movement: momentum, stamina sprint, vault, lateral dash, slide,
+-- instant stop and shift lock. The client runs it; the server sends the base speed.
+Config.Movement = {
+	SprintMultiplier = 1.5, -- jog 16 -> sprint 24
+	StaminaMax = 100,
+	SprintDrain = 24, -- per second of sprinting (about 4 seconds from full)
+	StaminaRegen = 22, -- per second once you stop sprinting
+	RegenDelay = 0.9,
+	ExhaustRecover = 30, -- after running dry, sprint unlocks again at this much stamina
+
+	Accel = 80, -- studs/s² when pushing a direction
+	Decel = 45, -- studs/s² when you let go: you glide a few studs before stopping
+	AirControl = 0.35,
+
+	DashSpeed = 34, -- Space + A/D: sideways burst
+	DashCost = 15,
+	DashCooldown = 0.8,
+
+	VaultUp = 36, -- Space near a low obstacle hops you over it
+	VaultMaxHeight = 7.5,
+	VaultCost = 8,
+	VaultCooldown = 0.5,
+
+	SlideBoost = 1.2, -- C while running: a low slide faster than your sprint
+	SlideTime = 0.7,
+	SlideDecel = 14,
+	SlideMinSpeed = 12,
+	SlideCost = 10,
+	SlideCooldown = 1.1,
+	SlideTagReduction = 1.2, -- sliding minnows are harder to chomp
+
+	ShiftLockOffset = 1.75,
+	FovBase = 70,
+	FovSprint = 82,
+}
 
 -- Map layout (the arena runs along the X axis) --------------------------------
 Config.ArenaHalfLength = 120 -- shore edge to shore edge is 2x this
@@ -77,7 +114,7 @@ Config.Abilities = {
 	-- Shark
 	Lunge = {
 		Id = "Lunge", Name = "Lunge", Role = "Shark", Price = 0, Cooldown = 7,
-		Description = "Explode forward to snap up a minnow.",
+		Description = "Explode forward to snap up a minnow, then a short recovery.",
 		Color = Color3.fromRGB(255, 80, 80), Icon = "🦈",
 	},
 	Sonar = {

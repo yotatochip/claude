@@ -4,7 +4,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local EVENTS = { "UseAbility", "UseItem", "Notify", "Feed", "Effect", "Banner" }
+local EVENTS = { "UseAbility", "UseItem", "Move", "Notify", "Feed", "Effect", "Banner" }
 local FUNCTIONS = { "Shop", "RedeemCode" }
 
 local folder: Folder
@@ -36,6 +36,7 @@ end
 return {
 	UseAbility = event("UseAbility"), -- client -> server
 	UseItem = event("UseItem"), -- client -> server (itemId)
+	Move = event("Move"), -- client -> server (action) for moves others need to see, e.g. "Slide"
 	Notify = event("Notify"), -- server -> client (text, color?)
 	Feed = event("Feed"), -- server -> all (killer, victim, kind)
 	Effect = event("Effect"), -- server -> client(s) (kind, data)

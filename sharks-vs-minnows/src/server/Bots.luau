@@ -157,10 +157,10 @@ function Bots.Configure(e: Entity)
 	end
 	if e.Role == "Shark" then
 		e.Bot.Ability = if math.random() < 0.3 then "Frenzy" else "Lunge"
-		e.Bot.SpeedFactor = 0.84 + 0.06 * e.Bot.Skill
+		e.Bot.SpeedFactor = 1.06 + 0.08 * e.Bot.Skill
 	else
 		e.Bot.Ability = if math.random() < 0.5 then "Bubble" else "Dash"
-		e.Bot.SpeedFactor = 0.9 + 0.08 * e.Bot.Skill
+		e.Bot.SpeedFactor = 1.12 + 0.1 * e.Bot.Skill
 	end
 	e.Bot.Lane = math.random(-Config.ArenaHalfWidth + 10, Config.ArenaHalfWidth - 10)
 end

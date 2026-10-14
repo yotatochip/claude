@@ -5,6 +5,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Ui = require(script.Parent.Ui)
@@ -110,7 +111,7 @@ local function slot(order: number, size: number, key: string, withCount: boolean
 	return { Button = b, Icon = icon, Name = name, Key = keyLabel, Count = count, Cooldown = cd, CooldownText = cdText }
 end
 
-Hud.AbilitySlot = slot(1, 96, "E", false)
+Hud.AbilitySlot = slot(1, 96, "Q", false)
 Hud.ItemSlots = {} :: { [string]: Slot }
 for i, id in Config.ItemOrder do
 	local def = Config.Items[id]
@@ -119,6 +120,48 @@ for i, id in Config.ItemOrder do
 	s.Name.Text = def.Name
 	s.Button.BackgroundColor3 = T.Panel
 	Hud.ItemSlots[id] = s
+end
+
+-- Stamina ----------------------------------------------------------------------------------------------
+
+local staminaFrame = make("Frame", {
+	Name = "Stamina", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -124), Size = UDim2.fromOffset(320, 16),
+	BackgroundColor3 = T.Panel, BackgroundTransparency = 0.15, Parent = gui,
+}, { Ui.corner(8), Ui.stroke(2.5) })
+local staminaFill = make("Frame", {
+	Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(110, 230, 255), Parent = staminaFrame,
+}, { Ui.corner(8), Ui.gradient(Color3.new(1, 1, 1), Color3.fromRGB(170, 170, 170)) })
+local staminaText = Ui.label({
+	AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 0, -2), Size = UDim2.fromOffset(200, 16),
+	Text = "STAMINA", Font = Ui.BodyFont, StrokeThickness = 1, Parent = staminaFrame,
+})
+
+function Hud.SetStamina(fraction: number, exhausted: boolean, sprinting: boolean)
+	staminaFill.Size = UDim2.fromScale(math.clamp(fraction, 0, 1), 1)
+	staminaFill.BackgroundColor3 = if exhausted then T.Bad elseif sprinting then Color3.fromRGB(255, 210, 80) else Color3.fromRGB(110, 230, 255)
+	staminaText.Text = if exhausted then "WINDED" elseif sprinting then "SPRINTING" else "STAMINA"
+	staminaText.TextColor3 = if exhausted then T.Bad else T.Text
+end
+
+Ui.label({
+	Name = "Keys", AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 12, 1, -10), Size = UDim2.fromOffset(560, 18),
+	TextXAlignment = Enum.TextXAlignment.Left, Font = Ui.BodyFont, StrokeThickness = 1, TextColor3 = T.Muted,
+	Text = "Shift sprint · Space vault · Space+A/D dash · C slide · Alt stop · Ctrl shift lock · Q ability",
+	Visible = not UserInputService.TouchEnabled, Parent = gui,
+})
+
+-- Touch controls for the movement moves (phones and tablets only).
+Hud.Touch = {} :: { [string]: TextButton }
+if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
+	local pad = make("Frame", {
+		Name = "TouchMoves", AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -150, 1, -150), Size = UDim2.fromOffset(150, 210),
+		BackgroundTransparency = 1, Parent = gui,
+	}, {
+		make("UIGridLayout", { CellSize = UDim2.fromOffset(70, 62), CellPadding = UDim2.fromOffset(8, 8), SortOrder = Enum.SortOrder.LayoutOrder }),
+	})
+	for i, info in { { "Sprint", "SPRINT" }, { "Slide", "SLIDE" }, { "DashL", "◀ DASH" }, { "DashR", "DASH ▶" }, { "Vault", "VAULT" }, { "Stop", "STOP" } } do
+		Hud.Touch[info[1]] = Ui.button({ LayoutOrder = i, Text = info[2], BackgroundTransparency = 0.15, Parent = pad }, T.PanelLight)
+	end
 end
 
 -- Banner, toasts, feed ---------------------------------------------------------------------------

@@ -107,6 +107,8 @@ local function onCharacter(player: Player, character: Model)
 end
 
 local function onPlayerAdded(player: Player)
+	-- Shift is sprint, so Roblox's own Shift shift-lock is off; Left Ctrl toggles ours instead.
+	player.DevEnableMouseLock = false
 	Entities.AddPlayer(player)
 	player.CharacterAdded:Connect(function(character)
 		onCharacter(player, character)
@@ -136,6 +138,13 @@ Remotes.UseAbility.OnServerEvent:Connect(function(player)
 	local e = Entities.Get(player)
 	if e then
 		Abilities.UseAbility(e)
+	end
+end)
+
+Remotes.Move.OnServerEvent:Connect(function(player, action)
+	local e = Entities.Get(player)
+	if e and action == "Slide" then
+		Entities.Slide(e)
 	end
 end)
 
@@ -352,6 +361,9 @@ local function tryTags()
 				continue
 			end
 			local reach = Config.TagRange + (if s.BiteBonusUntil > t then s.BiteBonus else 0)
+			if m.SlidingUntil > t then
+				reach -= Config.Movement.SlideTagReduction
+			end
 			if (sr.Position - mr.Position).Magnitude > reach then
 				continue
 			end

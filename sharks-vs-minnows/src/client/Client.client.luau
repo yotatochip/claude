@@ -13,6 +13,7 @@ local Ui = require(script.Parent:WaitForChild("Ui"))
 local Fx = require(script.Parent:WaitForChild("Fx"))
 local Hud = require(script.Parent:WaitForChild("Hud"))
 local Shop = require(script.Parent:WaitForChild("Shop"))
+local Movement = require(script.Parent:WaitForChild("Movement"))
 
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
@@ -45,7 +46,7 @@ ContextActionService:BindAction("SvMAbility", function(_, state)
 		useAbility()
 	end
 	return Enum.ContextActionResult.Sink
-end, false, Enum.KeyCode.E, Enum.KeyCode.ButtonX)
+end, false, Enum.KeyCode.Q, Enum.KeyCode.E, Enum.KeyCode.ButtonX)
 
 for _, id in Config.ItemOrder do
 	local def = Config.Items[id]
@@ -61,6 +62,25 @@ for _, id in Config.ItemOrder do
 	end)
 end
 Hud.AbilitySlot.Button.Activated:Connect(useAbility)
+
+Movement.Start()
+
+local touch = Hud.Touch
+if touch.Sprint then
+	touch.Sprint.Activated:Connect(function()
+		Movement.SetSprintToggle(not Movement.SprintToggle)
+		touch.Sprint.BackgroundColor3 = if Movement.SprintToggle then Color3.fromRGB(255, 190, 40) else Ui.Theme.PanelLight
+	end)
+	touch.Slide.Activated:Connect(Movement.Slide)
+	touch.Vault.Activated:Connect(Movement.Vault)
+	touch.Stop.Activated:Connect(Movement.Stop)
+	touch.DashL.Activated:Connect(function()
+		Movement.Dash(-1)
+	end)
+	touch.DashR.Activated:Connect(function()
+		Movement.Dash(1)
+	end)
+end
 
 Hud.ShopButton.Activated:Connect(Shop.ToggleShop)
 Hud.CodesButton.Activated:Connect(Shop.ToggleCodes)
@@ -179,6 +199,7 @@ end)
 
 RunService.RenderStepped:Connect(function()
 	Hud.Update()
+	Hud.SetStamina(Movement.Stamina / Config.Movement.StaminaMax, Movement.Exhausted, Movement.Sprinting)
 	local phase = ReplicatedStorage:GetAttribute("Phase")
 	Hud.SpectateButton.Visible = player:GetAttribute("Role") == "Lobby" and (phase == "Ready" or phase == "Crossing")
 end)

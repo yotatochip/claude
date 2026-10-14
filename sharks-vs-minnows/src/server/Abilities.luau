@@ -159,6 +159,12 @@ handlers.Lunge = function(e, root)
 	Entities.AddEffect(e, 42, 1, 0.4)
 	e.BiteBonus = 1.6
 	e.BiteBonusUntil = now() + 0.6
+	-- recovery frames: a whiffed lunge leaves the shark slow for a moment
+	task.delay(0.4, function()
+		if e.Role == "Shark" then
+			Entities.AddEffect(e, 0, 0.55, 0.5)
+		end
+	end)
 	aura(e, Config.Abilities.Lunge.Color, 0.5)
 	burst(root.Position, Config.Abilities.Lunge.Color, 4)
 end

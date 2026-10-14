@@ -29,11 +29,48 @@ Config.BotsEnabled = true
 Config.BotFillTarget = 8 -- top the round up to this many participants
 
 -- Movement ---------------------------------------------------------------------
-Config.MinnowSpeed = 20
-Config.SharkSpeed = 21
-Config.LobbySpeed = 18
+-- These are jogging speeds. Holding sprint multiplies them (see Config.Movement).
+Config.MinnowSpeed = 16
+Config.SharkSpeed = 16.5
+Config.LobbySpeed = 16
 Config.TagRange = 4.6 -- studs between root parts that counts as a chomp
 Config.TagGrace = 1.0 -- seconds a brand-new shark can't tag (no instant chain tags)
+
+-- Huss Valley-style movement: momentum, stamina sprint, vault, lateral dash, slide,
+-- instant stop and shift lock. The client runs it; the server sends the base speed.
+Config.Movement = {
+	SprintMultiplier = 1.5, -- jog 16 -> sprint 24
+	StaminaMax = 100,
+	SprintDrain = 24, -- per second of sprinting (about 4 seconds from full)
+	StaminaRegen = 22, -- per second once you stop sprinting
+	RegenDelay = 0.9,
+	ExhaustRecover = 30, -- after running dry, sprint unlocks again at this much stamina
+
+	Accel = 80, -- studs/s² when pushing a direction
+	Decel = 32, -- studs/s² when you let go: you glide a little before stopping
+	AirControl = 0.35,
+
+	DashSpeed = 34, -- Space + A/D: sideways burst
+	DashCost = 15,
+	DashCooldown = 0.8,
+
+	VaultUp = 36, -- Space near a low obstacle hops you over it
+	VaultMaxHeight = 7.5,
+	VaultCost = 8,
+	VaultCooldown = 0.5,
+
+	SlideBoost = 1.2, -- C while running: a low slide faster than your sprint
+	SlideTime = 0.7,
+	SlideDecel = 14,
+	SlideMinSpeed = 12,
+	SlideCost = 10,
+	SlideCooldown = 1.1,
+	SlideTagReduction = 1.2, -- sliding minnows are harder to chomp
+
+	ShiftLockOffset = 1.75,
+	FovBase = 70,
+	FovSprint = 82,
+}
 
 -- Map layout (the arena runs along the X axis) --------------------------------
 Config.ArenaHalfLength = 120 -- shore edge to shore edge is 2x this
@@ -89,7 +126,7 @@ Config.Abilities = {
 	-- Shark
 	Lunge = {
 		Id = "Lunge", Name = "Lunge", Role = "Shark", Price = 0, Cooldown = 7,
-		Description = "Explode forward to snap up a minnow.",
+		Description = "Explode forward to snap up a minnow, then a short recovery.",
 		Color = Color3.fromRGB(255, 80, 80), Icon = "🦈",
 	},
 	Sonar = {
@@ -199,7 +236,7 @@ return Config
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local EVENTS = { "UseAbility", "UseItem", "Notify", "Feed", "Effect", "Banner" }
+local EVENTS = { "UseAbility", "UseItem", "Move", "Notify", "Feed", "Effect", "Banner" }
 local FUNCTIONS = { "Shop", "RedeemCode" }
 
 local folder: Folder
@@ -231,6 +268,7 @@ end
 return {
 	UseAbility = event("UseAbility"), -- client -> server
 	UseItem = event("UseItem"), -- client -> server (itemId)
+	Move = event("Move"), -- client -> server (action) for moves others need to see, e.g. "Slide"
 	Notify = event("Notify"), -- server -> client (text, color?)
 	Feed = event("Feed"), -- server -> all (killer, victim, kind)
 	Effect = event("Effect"), -- server -> client(s) (kind, data)
@@ -415,6 +453,12 @@ handlers.Lunge = function(e, root)
 	Entities.AddEffect(e, 42, 1, 0.4)
 	e.BiteBonus = 1.6
 	e.BiteBonusUntil = now() + 0.6
+	-- recovery frames: a whiffed lunge leaves the shark slow for a moment
+	task.delay(0.4, function()
+		if e.Role == "Shark" then
+			Entities.AddEffect(e, 0, 0.55, 0.5)
+		end
+	end)
 	aura(e, Config.Abilities.Lunge.Color, 0.5)
 	burst(root.Position, Config.Abilities.Lunge.Color, 4)
 end
@@ -818,10 +862,10 @@ function Bots.Configure(e: Entity)
 	end
 	if e.Role == "Shark" then
 		e.Bot.Ability = if math.random() < 0.3 then "Frenzy" else "Lunge"
-		e.Bot.SpeedFactor = 0.84 + 0.06 * e.Bot.Skill
+		e.Bot.SpeedFactor = 1.06 + 0.08 * e.Bot.Skill
 	else
 		e.Bot.Ability = if math.random() < 0.5 then "Bubble" else "Dash"
-		e.Bot.SpeedFactor = 0.9 + 0.08 * e.Bot.Skill
+		e.Bot.SpeedFactor = 1.12 + 0.1 * e.Bot.Skill
 	end
 	e.Bot.Lane = math.random(-Config.ArenaHalfWidth + 10, Config.ArenaHalfWidth - 10)
 end
@@ -986,6 +1030,7 @@ return Bots
 -- through this module: roles, speed effects, shields, appearance and per-round stats.
 
 local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
@@ -1006,6 +1051,8 @@ export type Entity = {
 	ShieldUntil: number, -- bubble shield: any number of chomps bounce
 	PearlUntil: number, -- pearl: blocks exactly one chomp
 	RootedUntil: number, -- caught in a net
+	SlidingUntil: number, -- mid-slide (a little harder to chomp)
+	LastSlideAt: number,
 	SharkSince: number,
 	BiteBonus: number, -- extra tag range (Frenzy)
 	BiteBonusUntil: number,
@@ -1041,6 +1088,8 @@ local function new(name: string, player: Player?, isBot: boolean): Entity
 		ShieldUntil = 0,
 		PearlUntil = 0,
 		RootedUntil = 0,
+		SlidingUntil = 0,
+		LastSlideAt = 0,
 		SharkSince = 0,
 		BiteBonus = 0,
 		BiteBonusUntil = 0,
@@ -1168,8 +1217,22 @@ function Entities.UpdateMovement()
 			end
 		end
 		local speed = (baseSpeed(e) + add) * mult
-		if e.Frozen or e.RootedUntil > t then
+		local held = e.Frozen or e.RootedUntil > t
+		if held then
 			speed = 0
+		end
+		local player = e.Player
+		if player then
+			-- Real players move with the client-side momentum controller (Movement.luau), which
+			-- builds sprint, dashes and slides on top of this base speed.
+			local current = player:GetAttribute("MoveSpeed")
+			if typeof(current) ~= "number" or math.abs(current - speed) > 0.05 then
+				player:SetAttribute("MoveSpeed", speed)
+			end
+			if player:GetAttribute("Rooted") ~= held then
+				player:SetAttribute("Rooted", held)
+			end
+			continue
 		end
 		if e.Bot then
 			speed *= e.Bot.SpeedFactor or 1
@@ -1353,6 +1416,37 @@ function Entities.ApplyTrail(e: Entity, trailId: string)
 	trail.Parent = root
 end
 
+-- Leans the character back into a baseball slide. Done on the server so everyone sees it.
+function Entities.Slide(e: Entity)
+	local t = now()
+	if t - e.LastSlideAt < Config.Movement.SlideCooldown * 0.8 then
+		return
+	end
+	e.LastSlideAt = t
+	e.SlidingUntil = t + Config.Movement.SlideTime
+	local model = e.Model
+	local lower = model and model:FindFirstChild("LowerTorso")
+	local joint = lower and lower:FindFirstChild("Root")
+	if not (joint and joint:IsA("Motor6D")) then
+		return
+	end
+	local rest = joint:GetAttribute("RestC0")
+	if typeof(rest) ~= "CFrame" then
+		rest = joint.C0
+		joint:SetAttribute("RestC0", rest)
+	end
+	local restC0 = rest :: CFrame
+	local lean = TweenService:Create(joint, TweenInfo.new(0.12, Enum.EasingStyle.Quad), {
+		C0 = restC0 * CFrame.new(0, -1.1, 0) * CFrame.Angles(math.rad(55), 0, 0),
+	})
+	lean:Play()
+	task.delay(Config.Movement.SlideTime, function()
+		if joint.Parent then
+			TweenService:Create(joint, TweenInfo.new(0.18, Enum.EasingStyle.Quad), { C0 = restC0 }):Play()
+		end
+	end)
+end
+
 function Entities.ResetRoundState(e: Entity)
 	e.Effects = {}
 	e.Frozen = false
@@ -1499,6 +1593,8 @@ local function onCharacter(player: Player, character: Model)
 end
 
 local function onPlayerAdded(player: Player)
+	-- Shift is sprint, so Roblox's own Shift shift-lock is off; Left Ctrl toggles ours instead.
+	player.DevEnableMouseLock = false
 	Entities.AddPlayer(player)
 	player.CharacterAdded:Connect(function(character)
 		onCharacter(player, character)
@@ -1528,6 +1624,13 @@ Remotes.UseAbility.OnServerEvent:Connect(function(player)
 	local e = Entities.Get(player)
 	if e then
 		Abilities.UseAbility(e)
+	end
+end)
+
+Remotes.Move.OnServerEvent:Connect(function(player, action)
+	local e = Entities.Get(player)
+	if e and action == "Slide" then
+		Entities.Slide(e)
 	end
 end)
 
@@ -1744,6 +1847,9 @@ local function tryTags()
 				continue
 			end
 			local reach = Config.TagRange + (if s.BiteBonusUntil > t then s.BiteBonus else 0)
+			if m.SlidingUntil > t then
+				reach -= Config.Movement.SlideTagReduction
+			end
 			if (sr.Position - mr.Position).Magnitude > reach then
 				continue
 			end
@@ -2779,15 +2885,15 @@ return PlayerData
       </Item>
     </Item>
   </Item>
-  <Item class="StarterPlayer" referent="RBX19">
+  <Item class="StarterPlayer" referent="RBX20">
    <Properties>
     <string name="Name">StarterPlayer</string>
    </Properties>
-    <Item class="StarterPlayerScripts" referent="RBX18">
+    <Item class="StarterPlayerScripts" referent="RBX19">
      <Properties>
       <string name="Name">StarterPlayerScripts</string>
      </Properties>
-      <Item class="Folder" referent="RBX17">
+      <Item class="Folder" referent="RBX18">
        <Properties>
         <string name="Name">Client</string>
        </Properties>
@@ -2809,6 +2915,7 @@ local Ui = require(script.Parent:WaitForChild("Ui"))
 local Fx = require(script.Parent:WaitForChild("Fx"))
 local Hud = require(script.Parent:WaitForChild("Hud"))
 local Shop = require(script.Parent:WaitForChild("Shop"))
+local Movement = require(script.Parent:WaitForChild("Movement"))
 
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
@@ -2841,7 +2948,7 @@ ContextActionService:BindAction("SvMAbility", function(_, state)
 		useAbility()
 	end
 	return Enum.ContextActionResult.Sink
-end, false, Enum.KeyCode.E, Enum.KeyCode.ButtonX)
+end, false, Enum.KeyCode.Q, Enum.KeyCode.E, Enum.KeyCode.ButtonX)
 
 for _, id in Config.ItemOrder do
 	local def = Config.Items[id]
@@ -2857,6 +2964,25 @@ for _, id in Config.ItemOrder do
 	end)
 end
 Hud.AbilitySlot.Button.Activated:Connect(useAbility)
+
+Movement.Start()
+
+local touch = Hud.Touch
+if touch.Sprint then
+	touch.Sprint.Activated:Connect(function()
+		Movement.SetSprintToggle(not Movement.SprintToggle)
+		touch.Sprint.BackgroundColor3 = if Movement.SprintToggle then Color3.fromRGB(255, 190, 40) else Ui.Theme.PanelLight
+	end)
+	touch.Slide.Activated:Connect(Movement.Slide)
+	touch.Vault.Activated:Connect(Movement.Vault)
+	touch.Stop.Activated:Connect(Movement.Stop)
+	touch.DashL.Activated:Connect(function()
+		Movement.Dash(-1)
+	end)
+	touch.DashR.Activated:Connect(function()
+		Movement.Dash(1)
+	end)
+end
 
 Hud.ShopButton.Activated:Connect(Shop.ToggleShop)
 Hud.CodesButton.Activated:Connect(Shop.ToggleCodes)
@@ -2975,6 +3101,7 @@ end)
 
 RunService.RenderStepped:Connect(function()
 	Hud.Update()
+	Hud.SetStamina(Movement.Stamina / Config.Movement.StaminaMax, Movement.Exhausted, Movement.Sprinting)
 	local phase = ReplicatedStorage:GetAttribute("Phase")
 	Hud.SpectateButton.Visible = player:GetAttribute("Role") == "Lobby" and (phase == "Ready" or phase == "Crossing")
 end)
@@ -3198,6 +3325,7 @@ return Fx
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Ui = require(script.Parent.Ui)
@@ -3303,7 +3431,7 @@ local function slot(order: number, size: number, key: string, withCount: boolean
 	return { Button = b, Icon = icon, Name = name, Key = keyLabel, Count = count, Cooldown = cd, CooldownText = cdText }
 end
 
-Hud.AbilitySlot = slot(1, 96, "E", false)
+Hud.AbilitySlot = slot(1, 96, "Q", false)
 Hud.ItemSlots = {} :: { [string]: Slot }
 for i, id in Config.ItemOrder do
 	local def = Config.Items[id]
@@ -3312,6 +3440,48 @@ for i, id in Config.ItemOrder do
 	s.Name.Text = def.Name
 	s.Button.BackgroundColor3 = T.Panel
 	Hud.ItemSlots[id] = s
+end
+
+-- Stamina ----------------------------------------------------------------------------------------------
+
+local staminaFrame = make("Frame", {
+	Name = "Stamina", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -124), Size = UDim2.fromOffset(320, 16),
+	BackgroundColor3 = T.Panel, BackgroundTransparency = 0.15, Parent = gui,
+}, { Ui.corner(8), Ui.stroke(2.5) })
+local staminaFill = make("Frame", {
+	Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(110, 230, 255), Parent = staminaFrame,
+}, { Ui.corner(8), Ui.gradient(Color3.new(1, 1, 1), Color3.fromRGB(170, 170, 170)) })
+local staminaText = Ui.label({
+	AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 0, -2), Size = UDim2.fromOffset(200, 16),
+	Text = "STAMINA", Font = Ui.BodyFont, StrokeThickness = 1, Parent = staminaFrame,
+})
+
+function Hud.SetStamina(fraction: number, exhausted: boolean, sprinting: boolean)
+	staminaFill.Size = UDim2.fromScale(math.clamp(fraction, 0, 1), 1)
+	staminaFill.BackgroundColor3 = if exhausted then T.Bad elseif sprinting then Color3.fromRGB(255, 210, 80) else Color3.fromRGB(110, 230, 255)
+	staminaText.Text = if exhausted then "WINDED" elseif sprinting then "SPRINTING" else "STAMINA"
+	staminaText.TextColor3 = if exhausted then T.Bad else T.Text
+end
+
+Ui.label({
+	Name = "Keys", AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 12, 1, -10), Size = UDim2.fromOffset(560, 18),
+	TextXAlignment = Enum.TextXAlignment.Left, Font = Ui.BodyFont, StrokeThickness = 1, TextColor3 = T.Muted,
+	Text = "Shift sprint · Space vault · Space+A/D dash · C slide · Alt stop · Ctrl shift lock · Q ability",
+	Visible = not UserInputService.TouchEnabled, Parent = gui,
+})
+
+-- Touch controls for the movement moves (phones and tablets only).
+Hud.Touch = {} :: { [string]: TextButton }
+if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
+	local pad = make("Frame", {
+		Name = "TouchMoves", AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -150, 1, -150), Size = UDim2.fromOffset(150, 210),
+		BackgroundTransparency = 1, Parent = gui,
+	}, {
+		make("UIGridLayout", { CellSize = UDim2.fromOffset(70, 62), CellPadding = UDim2.fromOffset(8, 8), SortOrder = Enum.SortOrder.LayoutOrder }),
+	})
+	for i, info in { { "Sprint", "SPRINT" }, { "Slide", "SLIDE" }, { "DashL", "◀ DASH" }, { "DashR", "DASH ▶" }, { "Vault", "VAULT" }, { "Stop", "STOP" } } do
+		Hud.Touch[info[1]] = Ui.button({ LayoutOrder = i, Text = info[2], BackgroundTransparency = 0.15, Parent = pad }, T.PanelLight)
+	end
 end
 
 -- Banner, toasts, feed ---------------------------------------------------------------------------
@@ -3528,6 +3698,411 @@ return Hud
          </Properties>
         </Item>
         <Item class="ModuleScript" referent="RBX15">
+         <Properties>
+          <string name="Name">Movement</string>
+          <ProtectedString name="Source"><![CDATA[--!strict
+-- Huss Valley-style movement for the local character.
+--
+--   WASD            momentum: you build up to speed and glide a little when you let go
+--   Shift (hold)    sprint, drains stamina
+--   Space           vault over low obstacles (a small hop in the open)
+--   Space + A / D   dash sideways
+--   C               slide (while running)
+--   Alt             instant stop: kills your momentum
+--   Left Ctrl       toggle shift lock
+--
+-- The server sends a base speed (player attribute "MoveSpeed") that already includes ability
+-- boosts, slows, nets and the pre-crossing freeze. Everything here builds on top of that.
+-- The default control script still reads the keys; this overrides what the humanoid is told.
+
+local ContextActionService = game:GetService("ContextActionService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local Config = require(ReplicatedStorage.Shared.Config)
+local Remotes = require(ReplicatedStorage.Shared.Remotes)
+local Fx = require(script.Parent.Fx)
+
+local M = Config.Movement
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+local controls: any = nil
+task.spawn(function()
+	local ok, module = pcall(function()
+		return require(player:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule") :: ModuleScript) :: any
+	end)
+	if ok and module then
+		controls = module:GetControls()
+	end
+end)
+
+local Movement = {}
+
+Movement.Stamina = M.StaminaMax
+Movement.Exhausted = false
+Movement.Sprinting = false
+Movement.ShiftLock = false
+Movement.SprintToggle = false -- mobile / gamepad toggle
+
+local velocity = Vector3.zero -- the horizontal velocity we're steering the humanoid with
+local sprintHeld = false
+local lastDrainAt = 0
+local lastBase = Config.MinnowSpeed
+local slideUntil = 0
+local slideDir = Vector3.zero
+local nextSlide = 0
+local nextDash = 0
+local nextVault = 0
+local camOffsetY = 0
+
+local function flat(v: Vector3): Vector3
+	return Vector3.new(v.X, 0, v.Z)
+end
+
+local function unitOr(v: Vector3, fallback: Vector3): Vector3
+	return if v.Magnitude > 1e-3 then v.Unit else fallback
+end
+
+local function moveToward(current: Vector3, target: Vector3, step: number): Vector3
+	local delta = target - current
+	local d = delta.Magnitude
+	if d <= step or d < 1e-4 then
+		return target
+	end
+	return current + delta / d * step
+end
+
+local function character(): (Model?, Humanoid?, BasePart?)
+	local char = player.Character
+	if not char then
+		return nil, nil, nil
+	end
+	local h = char:FindFirstChildOfClass("Humanoid")
+	local root = char:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if not h or h.Health <= 0 or not root then
+		return char, nil, nil
+	end
+	return char, h, root
+end
+
+local function grounded(h: Humanoid): boolean
+	return h.FloorMaterial ~= Enum.Material.Air
+end
+
+-- Raw stick / WASD input: X = right, Y = forward.
+local function rawInput(): Vector2
+	if controls then
+		local mv: Vector3 = controls:GetMoveVector()
+		return Vector2.new(mv.X, -mv.Z)
+	end
+	return Vector2.zero
+end
+
+local function cameraAxes(): (Vector3, Vector3)
+	local cf = camera.CFrame
+	local forward = unitOr(flat(cf.LookVector), Vector3.new(0, 0, -1))
+	local right = unitOr(flat(cf.RightVector), Vector3.new(1, 0, 0))
+	return forward, right
+end
+
+local function baseSpeed(): number
+	return player:GetAttribute("MoveSpeed") or Config.LobbySpeed
+end
+
+local function rooted(): boolean
+	return player:GetAttribute("Rooted") == true
+end
+
+local function spend(cost: number): boolean
+	if Movement.Stamina < cost then
+		return false
+	end
+	Movement.Stamina -= cost
+	lastDrainAt = os.clock()
+	return true
+end
+
+-- Actions -------------------------------------------------------------------------------------
+
+function Movement.Dash(side: number)
+	local _, h, root = character()
+	if not h or not root or rooted() or os.clock() < nextDash or not grounded(h) then
+		return
+	end
+	if not spend(M.DashCost) then
+		return
+	end
+	nextDash = os.clock() + M.DashCooldown
+	local _, right = cameraAxes()
+	if Movement.ShiftLock then
+		right = unitOr(flat(root.CFrame.RightVector), right)
+	end
+	-- keep forward momentum, replace sideways momentum with the burst
+	local along = velocity - right * velocity:Dot(right)
+	velocity = along + right * side * M.DashSpeed
+	Fx.Sound("Whoosh", 1.35)
+end
+
+function Movement.Vault()
+	local char, h, root = character()
+	if not char or not h or not root or rooted() or os.clock() < nextVault or not grounded(h) then
+		return
+	end
+	local forward = unitOr(flat(velocity), flat(root.CFrame.LookVector))
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { char }
+	local feet = root.Position - Vector3.new(0, h.HipHeight + root.Size.Y / 2, 0)
+	local low = workspace:Raycast(feet + Vector3.new(0, 1, 0), forward * 5, params)
+	local clear = workspace:Raycast(feet + Vector3.new(0, M.VaultMaxHeight, 0), forward * 6, params)
+	nextVault = os.clock() + M.VaultCooldown
+	if low and not clear and low.Instance.CanCollide then
+		if not spend(M.VaultCost) then
+			return
+		end
+		-- Vault: up and over, carrying (and slightly boosting) your speed.
+		local speed = math.max(flat(velocity).Magnitude, baseSpeed()) * 1.1
+		velocity = forward * speed
+		root.AssemblyLinearVelocity = forward * speed + Vector3.new(0, M.VaultUp, 0)
+		h:ChangeState(Enum.HumanoidStateType.Freefall)
+		Fx.Sound("Whoosh", 0.9)
+	elseif h.JumpHeight > 0 then
+		h:ChangeState(Enum.HumanoidStateType.Jumping)
+	end
+end
+
+function Movement.Slide()
+	local _, h, root = character()
+	local t = os.clock()
+	if not h or not root or rooted() or t < nextSlide or not grounded(h) then
+		return
+	end
+	local speed = flat(velocity).Magnitude
+	if speed < M.SlideMinSpeed or not spend(M.SlideCost) then
+		return
+	end
+	nextSlide = t + M.SlideCooldown
+	slideUntil = t + M.SlideTime
+	slideDir = unitOr(flat(velocity), flat(root.CFrame.LookVector))
+	velocity = slideDir * math.max(speed, baseSpeed() * M.SprintMultiplier) * M.SlideBoost
+	Remotes.Move:FireServer("Slide")
+	Fx.Sound("Whoosh", 0.75)
+end
+
+function Movement.Stop()
+	velocity = Vector3.zero
+	slideUntil = 0
+	local _, _, root = character()
+	if root then
+		local v = root.AssemblyLinearVelocity
+		root.AssemblyLinearVelocity = Vector3.new(0, v.Y, 0)
+	end
+end
+
+function Movement.ToggleShiftLock()
+	Movement.ShiftLock = not Movement.ShiftLock
+	if not Movement.ShiftLock then
+		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+	end
+	Fx.Sound("Click")
+end
+
+function Movement.SetSprintToggle(on: boolean)
+	Movement.SprintToggle = on
+end
+
+-- Per-frame controller -----------------------------------------------------------------------
+
+local function isSliding(): boolean
+	return os.clock() < slideUntil
+end
+
+local function step(dt: number)
+	local char, h, root = character()
+	if not char or not h or not root then
+		velocity = Vector3.zero
+		return
+	end
+	local t = os.clock()
+	local base = baseSpeed()
+	local held = rooted() or base <= 0
+
+	-- Ability boosts (Dart, Lunge, Riptide…) arrive as a jump in base speed: snap to them
+	-- so a burst feels like a burst instead of slowly accelerating into it.
+	if base - lastBase > 10 then
+		local dir = unitOr(flat(velocity), flat(root.CFrame.LookVector))
+		velocity = dir * math.max(base, velocity.Magnitude)
+	end
+	lastBase = base
+
+	local input = rawInput()
+	local forward, right = cameraAxes()
+	local wish = right * input.X + forward * input.Y
+	if wish.Magnitude > 1 then
+		wish = wish.Unit
+	end
+
+	-- stamina + sprint
+	if Movement.Exhausted and Movement.Stamina >= M.ExhaustRecover then
+		Movement.Exhausted = false
+	end
+	local wantsSprint = sprintHeld or Movement.SprintToggle
+	Movement.Sprinting = wantsSprint and wish.Magnitude > 0.1 and not Movement.Exhausted and not held
+	if Movement.Sprinting then
+		Movement.Stamina -= M.SprintDrain * dt
+		lastDrainAt = t
+		if Movement.Stamina <= 0 then
+			Movement.Stamina = 0
+			Movement.Exhausted = true
+		end
+	elseif t - lastDrainAt > M.RegenDelay then
+		Movement.Stamina = math.min(M.StaminaMax, Movement.Stamina + M.StaminaRegen * dt)
+	end
+
+	local sliding = t < slideUntil
+	local onGround = grounded(h)
+	if held then
+		velocity = Vector3.zero
+		slideUntil = 0
+		sliding = false
+	elseif sliding then
+		-- committed to the slide: glide in a straight line, bleeding speed
+		local floor = base * 0.8
+		local speed = math.max(floor, velocity.Magnitude - M.SlideDecel * dt)
+		velocity = slideDir * speed
+	else
+		local target = wish * base * (if Movement.Sprinting then M.SprintMultiplier else 1)
+		local rate = if wish.Magnitude > 0.05 then M.Accel else M.Decel
+		-- above your normal top speed (after a dash or slide), ease back down gently
+		if velocity.Magnitude > target.Magnitude + 1 and wish.Magnitude > 0.05 then
+			rate = math.max(M.Decel, M.Accel * 0.6)
+		end
+		if not onGround then
+			rate *= M.AirControl
+		end
+		velocity = moveToward(velocity, target, rate * dt)
+	end
+
+	local speed = velocity.Magnitude
+	h.WalkSpeed = speed
+	h:Move(if speed > 0.05 then velocity / speed else Vector3.zero, false)
+	if h.UseJumpPower then
+		h.UseJumpPower = false
+	end
+	h.JumpHeight = if held then 0 else 4.5
+
+	local wantLock = Movement.ShiftLock and not UserInputService.TouchEnabled
+	h.AutoRotate = not (wantLock or sliding)
+	if sliding then
+		root.CFrame = CFrame.lookAt(root.Position, root.Position + slideDir)
+	end
+	camOffsetY += ((if sliding then -1.6 else 0) - camOffsetY) * math.min(1, dt * 14)
+	h.CameraOffset = Vector3.new(if wantLock then M.ShiftLockOffset else 0, camOffsetY, 0)
+
+	-- sprint FOV kick
+	local over = math.clamp((speed - base) / math.max(base * (M.SprintMultiplier - 1), 1), 0, 1)
+	local fov = M.FovBase + (M.FovSprint - M.FovBase) * over
+	camera.FieldOfView += (fov - camera.FieldOfView) * math.min(1, dt * 8)
+end
+
+-- Shift lock runs after the camera has updated: lock the mouse to the center and turn the
+-- body to face where the camera looks (the over-the-shoulder offset is set in step()).
+local function shiftLockStep()
+	if not Movement.ShiftLock or UserInputService.TouchEnabled or isSliding() then
+		return
+	end
+	local _, h, root = character()
+	if not h or not root then
+		return
+	end
+	UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+	local look = unitOr(flat(camera.CFrame.LookVector), flat(root.CFrame.LookVector))
+	root.CFrame = CFrame.lookAt(root.Position, root.Position + look)
+end
+
+-- Input -------------------------------------------------------------------------------------------
+
+local function begin(state: Enum.UserInputState): boolean
+	return state == Enum.UserInputState.Begin
+end
+
+function Movement.Start()
+	RunService:BindToRenderStep("SvMMovement", Enum.RenderPriority.Input.Value + 1, step)
+	RunService:BindToRenderStep("SvMShiftLock", Enum.RenderPriority.Camera.Value + 2, shiftLockStep)
+
+	ContextActionService:BindActionAtPriority("SvMSprint", function(_, state)
+		if state == Enum.UserInputState.Begin then
+			sprintHeld = true
+		elseif state == Enum.UserInputState.End or state == Enum.UserInputState.Cancel then
+			sprintHeld = false
+		end
+		return Enum.ContextActionResult.Sink
+	end, false, Enum.ContextActionPriority.High.Value, Enum.KeyCode.LeftShift, Enum.KeyCode.RightShift)
+
+	-- Space replaces the normal jump: dash if A/D is held, otherwise vault.
+	ContextActionService:BindActionAtPriority("SvMVault", function(_, state)
+		if begin(state) then
+			local x = rawInput().X
+			if math.abs(x) > 0.5 then
+				Movement.Dash(math.sign(x))
+			else
+				Movement.Vault()
+			end
+		end
+		return Enum.ContextActionResult.Sink
+	end, false, Enum.ContextActionPriority.High.Value, Enum.KeyCode.Space, Enum.KeyCode.ButtonA)
+
+	ContextActionService:BindActionAtPriority("SvMSlide", function(_, state)
+		if begin(state) then
+			Movement.Slide()
+		end
+		return Enum.ContextActionResult.Sink
+	end, false, Enum.ContextActionPriority.High.Value, Enum.KeyCode.C, Enum.KeyCode.ButtonB)
+
+	ContextActionService:BindActionAtPriority("SvMStop", function(_, state)
+		if begin(state) then
+			Movement.Stop()
+		end
+		return Enum.ContextActionResult.Sink
+	end, false, Enum.ContextActionPriority.High.Value, Enum.KeyCode.LeftAlt, Enum.KeyCode.RightAlt, Enum.KeyCode.DPadDown)
+
+	ContextActionService:BindActionAtPriority("SvMShiftLock", function(_, state)
+		if begin(state) then
+			Movement.ToggleShiftLock()
+		end
+		return Enum.ContextActionResult.Sink
+	end, false, Enum.ContextActionPriority.High.Value, Enum.KeyCode.LeftControl)
+
+	-- Gamepad: click the left stick to toggle sprint, bumpers dash.
+	ContextActionService:BindActionAtPriority("SvMPadSprint", function(_, state)
+		if begin(state) then
+			Movement.SprintToggle = not Movement.SprintToggle
+		end
+		return Enum.ContextActionResult.Sink
+	end, false, Enum.ContextActionPriority.High.Value, Enum.KeyCode.ButtonL3)
+	ContextActionService:BindActionAtPriority("SvMPadDash", function(_, state, input)
+		if begin(state) then
+			Movement.Dash(if input.KeyCode == Enum.KeyCode.ButtonL1 then -1 else 1)
+		end
+		return Enum.ContextActionResult.Sink
+	end, false, Enum.ContextActionPriority.High.Value, Enum.KeyCode.ButtonL1, Enum.KeyCode.ButtonR1)
+
+	player.CharacterAdded:Connect(function()
+		velocity = Vector3.zero
+		slideUntil = 0
+		Movement.Stamina = M.StaminaMax
+		Movement.Exhausted = false
+	end)
+end
+
+return Movement
+]]></ProtectedString>
+         </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="RBX16">
          <Properties>
           <string name="Name">Shop</string>
           <ProtectedString name="Source"><![CDATA[--!strict
@@ -3756,7 +4331,7 @@ return Shop
 ]]></ProtectedString>
          </Properties>
         </Item>
-        <Item class="ModuleScript" referent="RBX16">
+        <Item class="ModuleScript" referent="RBX17">
          <Properties>
           <string name="Name">Ui</string>
           <ProtectedString name="Source"><![CDATA[--!strict

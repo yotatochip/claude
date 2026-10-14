@@ -29,15 +29,26 @@ With only you in the server, bots fill the round up to 8 swimmers so it's still 
 
 Beaches are safe zones: sharks physically can't step onto them, and nobody can be tagged there.
 
-## Controls
+## Controls and movement
 
-| Action | Key | Mobile / gamepad |
-| --- | --- | --- |
-| Ability | E | Tap the big button / X |
-| Speed Kelp | 1 | Tap the item button |
-| Lucky Pearl | 2 | Tap the item button |
-| Fishing Net | 3 | Tap the item button |
-| Shop, Codes, Spectate | Buttons on the left | Same |
+Movement works like Huss Valley. You build up speed and glide a few studs when you let go, sprinting runs on stamina, and you have vaults, side dashes, slides and an instant stop for juking. Minnows and sharks move the same way.
+
+| Move | Keyboard | Gamepad | Mobile |
+| --- | --- | --- | --- |
+| Run | WASD | Left stick | Thumbstick |
+| Sprint (uses stamina) | Hold Shift | Click left stick (toggle) | SPRINT (toggle) |
+| Vault over low rocks and coral | Space | A | VAULT |
+| Side dash | Space while holding A or D | LB / RB | ◀ DASH / DASH ▶ |
+| Slide (while running) | C | B | SLIDE |
+| Instant stop (kill momentum) | Alt | D-pad down | STOP |
+| Shift lock | Left Ctrl (toggle) | — | — |
+| Ability | Q (or E) | X | Big ability button |
+| Speed Kelp / Lucky Pearl / Fishing Net | 1 / 2 / 3 | — | Item buttons |
+
+- **Stamina:** a full bar gives about 4 seconds of sprinting and refills in about 4.5 seconds. Run it dry and you're *winded* until it's 30% full again. Dashes, vaults and slides cost a little stamina too.
+- **Slides:** launch you faster than a sprint for about 16 studs, and sliding minnows are harder to chomp.
+- **Lunge:** the shark's Lunge has recovery frames, so a missed lunge leaves the shark slow for half a second. Bait it, then dash.
+- Every movement number is in `Config.Movement`.
 
 ## Abilities
 
@@ -54,7 +65,7 @@ Shark abilities
 
 | Ability | Cost | Cooldown | Effect |
 | --- | --- | --- | --- |
-| 🦈 Lunge | Free | 7s | Explosive dash with a longer bite |
+| 🦈 Lunge | Free | 7s | Explosive dash with a longer bite, then a short recovery |
 | 📡 Sonar | 300 | 20s | See every minnow through walls for 4s |
 | 🩸 Frenzy | 500 | 24s | +8 speed and a bigger bite for 3.5s |
 | 🌀 Whirlpool | 850 | 26s | A whirlpool that slows minnows inside it for 3s |
@@ -99,6 +110,7 @@ sharks-vs-minnows/
     │   └── PlayerData.luau    DataStore saving
     └── client/   → StarterPlayer.StarterPlayerScripts.Client
         ├── Client.client.luau input, remotes, spectating
+        ├── Movement.luau      momentum, sprint/stamina, vault, dash, slide, stop, shift lock
         ├── Hud.luau           status bar, timer, role, ability bar, banners, kill feed
         ├── Shop.luau          shop and codes windows
         ├── Fx.luau            particles, sounds, camera shake, sonar, ink
