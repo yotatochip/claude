@@ -1,0 +1,86 @@
+# Minimal Roblox globals for selene (the full std needs a network download).
+base: luau
+name: roblox_lite
+globals:
+  game:
+    any: true
+  workspace:
+    any: true
+  script:
+    any: true
+  plugin:
+    any: true
+  shared:
+    any: true
+  Instance:
+    any: true
+  Vector3:
+    any: true
+  Vector2:
+    any: true
+  CFrame:
+    any: true
+  Color3:
+    any: true
+  UDim:
+    any: true
+  UDim2:
+    any: true
+  Enum:
+    any: true
+  task:
+    any: true
+  tick:
+    any: true
+  typeof:
+    any: true
+  TweenInfo:
+    any: true
+  NumberSequence:
+    any: true
+  NumberSequenceKeypoint:
+    any: true
+  ColorSequence:
+    any: true
+  ColorSequenceKeypoint:
+    any: true
+  NumberRange:
+    any: true
+  Random:
+    any: true
+  Ray:
+    any: true
+  RaycastParams:
+    any: true
+  OverlapParams:
+    any: true
+  Rect:
+    any: true
+  BrickColor:
+    any: true
+  DateTime:
+    any: true
+  PhysicalProperties:
+    any: true
+  Font:
+    any: true
+  Region3:
+    any: true
+  Axes:
+    any: true
+  Faces:
+    any: true
+  elapsedTime:
+    any: true
+  wait:
+    any: true
+  delay:
+    any: true
+  spawn:
+    any: true
+  warn:
+    any: true
+  settings:
+    any: true
+  UserSettings:
+    any: true

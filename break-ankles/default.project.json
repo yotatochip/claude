@@ -1,0 +1,48 @@
+{
+  "name": "BreakAnkles",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Shared": {
+        "$path": "src/shared"
+      }
+    },
+    "ServerScriptService": {
+      "Server": {
+        "$path": "src/server"
+      }
+    },
+    "StarterPlayer": {
+      "$properties": {
+        "CharacterUseJumpPower": true,
+        "CharacterJumpPower": 0,
+        "CharacterWalkSpeed": 20,
+        "AutoJumpEnabled": false,
+        "EnableMouseLockOption": true,
+        "CameraMaxZoomDistance": 45
+      },
+      "StarterPlayerScripts": {
+        "Client": {
+          "$path": "src/client"
+        }
+      }
+    },
+    "Lighting": {
+      "$properties": {
+        "Technology": "ShadowMap",
+        "ClockTime": 14.2,
+        "Brightness": 2.6
+      }
+    },
+    "SoundService": {
+      "$properties": {
+        "RespectFilteringEnabled": true
+      }
+    },
+    "Workspace": {
+      "$properties": {
+        "Gravity": 196.2
+      }
+    }
+  }
+}
