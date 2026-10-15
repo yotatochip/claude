@@ -187,9 +187,11 @@ Config.Arena = {
 	LobbyOffset = Vector3.new(-150, 26, 0),
 }
 
+-- Image is the vote-card picture (ForgeGUI art on the creator's account).
+-- Leave it empty to show only the live 3D preview of the map.
 Config.Maps = {
-	{ Id = "Valley", Name = "The Valley", Blurb = "Rolling green field" },
-	{ Id = "Dunes", Name = "The Dunes", Blurb = "Sun-baked sand flats" },
+	{ Id = "Valley", Name = "The Valley", Blurb = "Rolling green field", Image = "rbxassetid://122661598565232" },
+	{ Id = "Dunes", Name = "The Dunes", Blurb = "Sun-baked sand flats", Image = "rbxassetid://132328319131981" },
 }
 
 return Config

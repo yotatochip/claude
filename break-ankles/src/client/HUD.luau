@@ -13,6 +13,7 @@ local Catalog = require(Shared.Catalog)
 local Config = require(Shared.Config)
 local Net = require(Shared.Net)
 local Input = require(script.Parent.Input)
+local MapPreview = require(script.Parent.MapPreview)
 local Movement = require(script.Parent.Movement)
 local Sounds = require(script.Parent.Sounds)
 local UI = require(script.Parent.UI)
@@ -371,51 +372,124 @@ end
 ---------------------------------------------------------------------------
 local Shop = Net.Function("Shop")
 
+local previewCams: { Camera } = {}
+
+-- A picture of a map: a live 3D miniature, with the ForgeGUI art on top
+-- when Config.Maps has an Image for it.
+local function mapPicture(mapId: string, parent: Instance, size: UDim2, position: UDim2): Frame
+	local frame = UI.new("Frame", {
+		BackgroundColor3 = Color3.fromRGB(120, 180, 230),
+		Size = size,
+		Position = position,
+		ClipsDescendants = true,
+		Parent = parent,
+	}, { UI.corner(10) :: any, UI.gradient(Color3.fromRGB(150, 200, 255), Color3.fromRGB(220, 235, 255)) })
+	local viewport = UI.new("ViewportFrame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		Parent = frame,
+	}, { UI.corner(10) })
+	table.insert(previewCams, MapPreview.Build(viewport, mapId))
+	local image: string? = nil
+	for _, m in Config.Maps do
+		if m.Id == mapId then
+			image = m.Image
+		end
+	end
+	if image and image ~= "" then
+		UI.new("ImageLabel", {
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 1),
+			Image = image,
+			ScaleType = Enum.ScaleType.Crop,
+			ZIndex = 2,
+			Parent = frame,
+		}, { UI.corner(10) })
+	end
+	return frame
+end
+
 local function buildVote()
 	local panel = UI.panel({
 		Name = "Vote",
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -96),
-		Size = UDim2.fromOffset(440, 128),
+		Position = UDim2.new(0.5, 0, 1, -90),
+		Size = UDim2.fromOffset(580, 300),
 		Visible = false,
 		Parent = gui,
 	})
+	UI.new("UISizeConstraint", { MaxSize = Vector2.new(580, 300), Parent = panel })
 	refs.Vote = panel
-	UI.text({ Text = "VOTE FOR THE MAP", TextSize = 20, Size = UDim2.new(1, 0, 0, 26), Position = UDim2.fromOffset(0, 6), Parent = panel })
+	UI.text({ Text = "VOTE FOR THE MAP", TextSize = 24, Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, 8), Parent = panel })
 	local row = UI.new("Frame", {
 		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(12, 38),
-		Size = UDim2.new(1, -24, 0, 80),
+		Position = UDim2.fromOffset(14, 44),
+		Size = UDim2.new(1, -28, 1, -56),
 		Parent = panel,
-	}, { UI.list(Enum.FillDirection.Horizontal, 12, Enum.HorizontalAlignment.Center) })
+	}, { UI.list(Enum.FillDirection.Horizontal, 14, Enum.HorizontalAlignment.Center) })
 	refs.VoteButtons = {}
-	local colors = { Valley = Color3.fromRGB(80, 170, 70), Dunes = Color3.fromRGB(220, 170, 90) }
 	for i, m in Config.Maps do
-		local b = UI.button({
-			Text = m.Name,
-			TextSize = 22,
-			Size = UDim2.fromOffset(196, 76),
-			Color = colors[m.Id] or C.Blue,
+		local card = UI.new("TextButton", {
+			Name = m.Id,
+			Text = "",
+			AutoButtonColor = false,
+			BackgroundColor3 = C.Panel2,
+			Size = UDim2.new(0.5, -7, 1, 0),
 			LayoutOrder = i,
 			Parent = row,
-		}, function()
+		}, { UI.corner(12) })
+		local outline = UI.borderStroke(3, C.Accent, 1)
+		outline.Parent = card
+		mapPicture(m.Id, card, UDim2.new(1, -16, 0, 150), UDim2.fromOffset(8, 8))
+		UI.text({ Text = m.Name, TextSize = 24, Size = UDim2.new(1, -16, 0, 28), Position = UDim2.fromOffset(8, 162), TextXAlignment = Enum.TextXAlignment.Left, Parent = card })
+		UI.text({ Text = m.Blurb, Font = UI.Body, TextSize = 13, TextColor3 = C.Muted, Size = UDim2.new(1, -16, 0, 16), Position = UDim2.fromOffset(8, 192), TextXAlignment = Enum.TextXAlignment.Left, StrokeThickness = 1, Parent = card })
+		local count = UI.text({
+			Text = "0 votes",
+			TextSize = 18,
+			TextColor3 = C.Accent,
+			AnchorPoint = Vector2.new(1, 0),
+			Size = UDim2.fromOffset(120, 28),
+			Position = UDim2.new(1, -8, 0, 162),
+			TextXAlignment = Enum.TextXAlignment.Right,
+			Parent = card,
+		})
+		local scale = UI.new("UIScale", { Parent = card })
+		card.MouseEnter:Connect(function()
+			UI.tween(scale, 0.1, { Scale = 1.03 })
+		end)
+		card.MouseLeave:Connect(function()
+			UI.tween(scale, 0.1, { Scale = 1 })
+		end)
+		card.Activated:Connect(function()
 			Sounds.Play("Click")
+			scale.Scale = 0.95
+			UI.tween(scale, 0.15, { Scale = 1 }, Enum.EasingStyle.Back)
+			HUD.MyVote = m.Id
 			task.spawn(function()
 				Shop:InvokeServer("Vote", m.Id)
 			end)
-			HUD.MyVote = m.Id
 		end)
-		b.TextYAlignment = Enum.TextYAlignment.Top
-		UI.new("UIPadding", { PaddingTop = UDim.new(0, 10), Parent = b })
-		local count = UI.text({
-			Text = "0 votes",
-			Font = UI.Body,
-			TextSize = 14,
-			Position = UDim2.new(0, 0, 1, -30),
-			Size = UDim2.new(1, 0, 0, 18),
-			Parent = b,
-		})
-		refs.VoteButtons[m.Id] = { Button = b, Count = count }
+		refs.VoteButtons[m.Id] = { Button = card, Count = count, Outline = outline }
+	end
+end
+
+-- Shown while the match intro plays: which map won the vote.
+local function buildMapChosen()
+	local panel = UI.panel({
+		Name = "MapChosen",
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -90),
+		Size = UDim2.fromOffset(320, 230),
+		Visible = false,
+		Parent = gui,
+	})
+	refs.MapChosen = panel
+	refs.MapChosenTitle = UI.text({ Text = "", TextSize = 24, Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, 190), Parent = panel })
+	refs.MapChosenPictures = {}
+	for _, m in Config.Maps do
+		local pic = mapPicture(m.Id, panel, UDim2.new(1, -16, 0, 176), UDim2.fromOffset(8, 8))
+		pic.Visible = false
+		refs.MapChosenPictures[m.Id] = pic
 	end
 end
 
@@ -578,15 +652,18 @@ function HUD.Announce(text: string, sub: string?, color: Color3?)
 	refs.AnnounceText.TextColor3 = color or C.Text
 	refs.AnnounceSub.Text = sub or ""
 	frame.Visible = true
-	refs.AnnounceText.TextTransparency = 0
-	refs.AnnounceSub.TextTransparency = 0
+	UI.showText(refs.AnnounceText)
+	UI.showText(refs.AnnounceSub)
 	UI.pop(refs.AnnounceText, 0.4)
+	local function current(): boolean
+		return token == announceToken
+	end
 	task.delay(2.4, function()
-		if token == announceToken then
-			UI.tween(refs.AnnounceText, 0.35, { TextTransparency = 1 })
-			UI.tween(refs.AnnounceSub, 0.35, { TextTransparency = 1 })
+		if current() then
+			UI.fadeText(refs.AnnounceText, 0.35, current)
+			UI.fadeText(refs.AnnounceSub, 0.35, current)
 			task.delay(0.36, function()
-				if token == announceToken then
+				if current() then
 					frame.Visible = false
 				end
 			end)
@@ -601,26 +678,33 @@ function HUD.Toast(text: string, color: Color3?)
 	local t = refs.Toast :: TextLabel
 	t.Text = text
 	t.TextColor3 = color or C.Text
-	t.TextTransparency = 0
-	t.Visible = true
+	UI.showText(t)
 	UI.pop(t, 0.7)
+	local function current(): boolean
+		return token == toastToken
+	end
 	task.delay(1.8, function()
-		if token == toastToken then
-			UI.tween(t, 0.3, { TextTransparency = 1 })
+		if current() then
+			UI.fadeText(t, 0.3, current)
 		end
 	end)
 end
 
+local countToken = 0
 function HUD.Count(text: string)
+	countToken += 1
+	local token = countToken
 	local c = refs.Count :: TextLabel
 	c.Text = text
-	c.Visible = true
-	c.TextTransparency = 0
+	UI.showText(c)
 	UI.pop(c, 1.6)
 	Sounds.Play("Tick")
+	local function current(): boolean
+		return token == countToken
+	end
 	task.delay(0.8, function()
-		if c.Text == text then
-			UI.tween(c, 0.2, { TextTransparency = 1 })
+		if current() then
+			UI.fadeText(c, 0.2, current)
 		end
 	end)
 end
@@ -681,7 +765,7 @@ function HUD.Popup(text: string, sub: string?)
 	UI.pop(label, 0.5)
 	UI.tween(label, 1.4, { Position = UDim2.new(0.5, label.Position.X.Offset, 1, -120) })
 	task.delay(1.0, function()
-		UI.tween(label, 0.4, { TextTransparency = 1 })
+		UI.fadeText(label, 0.4)
 	end)
 	task.delay(1.5, function()
 		label:Destroy()
@@ -818,15 +902,30 @@ local function refresh()
 	refs.Cloaked.Visible = char ~= nil and char:GetAttribute("Cloaked") == true
 
 	-- Vote panel.
-	local voting = (phase == "Intermission" or phase == "Waiting") and not player:GetAttribute("AFK")
-	refs.Vote.Visible = voting and phase == "Intermission"
-	if refs.Vote.Visible then
+	local voting = phase == "Intermission" and not player:GetAttribute("AFK")
+	refs.Vote.Visible = voting
+	if voting then
 		for id, v in refs.VoteButtons do
 			local n = (State:GetAttribute("Vote_" .. id) :: number?) or 0
-			v.Count.Text = ("%d vote%s%s"):format(n, if n == 1 then "" else "s", if HUD.MyVote == id then "  ✓" else "")
+			v.Count.Text = ("%d vote%s"):format(n, if n == 1 then "" else "s")
+			v.Outline.Transparency = if HUD.MyVote == id then 0 else 1
 		end
 	elseif phase ~= "Intermission" then
 		HUD.MyVote = nil
+	end
+	local mapId = State:GetAttribute("Map")
+	refs.MapChosen.Visible = phase == "Intro"
+	if refs.MapChosen.Visible then
+		for id, pic in refs.MapChosenPictures do
+			pic.Visible = id == mapId
+		end
+		local name = mapId
+		for _, m in Config.Maps do
+			if m.Id == mapId then
+				name = m.Name
+			end
+		end
+		refs.MapChosenTitle.Text = "MAP: " .. string.upper(tostring(name))
 	end
 
 	-- Boosts.
@@ -861,6 +960,7 @@ function HUD.Start()
 	buildActionBar()
 	buildDowned()
 	buildVote()
+	buildMapChosen()
 
 	local Notify = Net.Event("Notify")
 	Notify.OnClientEvent:Connect(function(n)
@@ -891,7 +991,14 @@ function HUD.Start()
 	end)
 
 	local acc = 0
+	local orbitT = 0
 	RunService.RenderStepped:Connect(function(dt)
+		if refs.Vote.Visible or refs.MapChosen.Visible then
+			orbitT += dt
+			for _, cam in previewCams do
+				MapPreview.Orbit(cam, orbitT)
+			end
+		end
 		acc += dt
 		if acc >= 0.05 then
 			acc = 0

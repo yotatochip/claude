@@ -186,6 +186,30 @@ function UI.tween(inst: Instance, time: number, goal: { [string]: any }, style: 
 	return t
 end
 
+-- Text labels carry a UIStroke outline; fading only TextTransparency leaves
+-- the outline behind. These fade/show both, and hide the label when done.
+function UI.showText(label: TextLabel)
+	label.TextTransparency = 0
+	local stroke = label:FindFirstChildOfClass("UIStroke")
+	if stroke then
+		stroke.Transparency = 0
+	end
+	label.Visible = true
+end
+
+function UI.fadeText(label: TextLabel, time: number, isCurrent: (() -> boolean)?)
+	UI.tween(label, time, { TextTransparency = 1 })
+	local stroke = label:FindFirstChildOfClass("UIStroke")
+	if stroke then
+		UI.tween(stroke, time, { Transparency = 1 })
+	end
+	task.delay(time, function()
+		if not isCurrent or isCurrent() then
+			label.Visible = false
+		end
+	end)
+end
+
 function UI.formatNumber(n: number): string
 	local s = tostring(math.floor(n))
 	local formatted = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()

@@ -10,11 +10,13 @@ The rules, roles, abilities, items, currencies, prices and controls follow publi
 2. Press **Play**. Bots fill empty slots, so you can play alone. The lobby, the arena and the bots are generated when the game starts, so the place looks empty in edit mode. That's expected.
 3. To publish it, use **File → Publish to Roblox As…**, create a new experience and name it **Break Ankles**.
 4. In **Game Settings → Security**, turn on **Enable Studio Access to API Services** so gems, coins and unlocks save. Without it the game still runs, but nothing saves.
-5. Set the experience icon and thumbnail. ForgeGUI made both, and they're already uploaded to the Birdy1384 account as assets `98979542296379` (icon) and `91723483788506` (thumbnail); the thumbnail also hangs on the lobby poster. The Creator Dashboard sets the icon and thumbnail from uploaded image files, so download the two images from your ForgeGUI library and upload them under the experience's **Places → Basic Settings** and **Thumbnails** pages.
+5. Set the experience icon and thumbnails. The Creator Dashboard takes uploaded image files:
+   - **Thumbnails:** upload the three pictures in [`art/`](art/) (1920×1080): `thumbnail-ankles-broken.png`, `thumbnail-run.png` and `thumbnail-hero-or-chicken.png`. Your ForgeGUI library also has the original thumbnail art (Roblox asset `91723483788506`).
+   - **Icon:** download it from your ForgeGUI library (Roblox asset `98979542296379`).
 
 ## How a match works
 
-1. **Intermission (20 s).** Players wait on the lobby deck beside the field and vote for **The Valley** (grass) or **The Dunes** (sand). The Shop, Codes and AFK buttons are on the left.
+1. **Intermission (20 s).** Players wait on the lobby deck beside the field and vote for **The Valley** (grass) or **The Dunes** (sand). Each vote card shows a picture of the map over a slowly turning 3D preview, and the winning map's picture shows while the match starts. The Shop, Codes and AFK buttons are on the left.
 2. **Roles.** One random player becomes the **Chaser**: one for every 8 players, minimum one. Everyone else is a **Runner**.
 3. **Crossings.** Runners line up in a safe zone at one end of a long rectangular field. After "3, 2, 1, RUN!!" they have 40 seconds to reach the safe zone on the far side. The next crossing goes back the other way, and there are 3 crossings in total. Chasers can't enter safe zones, and runners can't be hit inside them.
 4. **Getting caught.** One knife hit downs a runner. A teammate can hold **E** next to them to revive them, which takes 2.5 seconds and leaves the rescuer frozen in place while they hold. A downed runner can also use a Rescue Kit. If nobody saves you within 10 seconds, or you're still on the field when the timer runs out, you become a Chaser. The chaser side snowballs.
