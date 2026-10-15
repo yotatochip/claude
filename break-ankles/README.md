@@ -16,7 +16,7 @@ The rules, roles, abilities, items, currencies, prices and controls follow publi
 
 ## How a match works
 
-1. **Intermission (20 s).** Players wait on the lobby deck beside the field and vote for **The Valley** (grass) or **The Dunes** (sand). Each vote card shows a picture of the map over a slowly turning 3D preview, and the winning map's picture shows while the match starts. The Shop, Codes and AFK buttons are on the left.
+1. **Intermission (20 s).** Players wait on the lobby deck beside the field and vote for **The Valley** (grass) or **The Dunes** (sand). Each vote card shows a picture of the map over a slowly turning 3D preview. After you vote (or press X) the window shrinks to a small "Voted" button you can click to change your vote, and the winning map's picture shows while the match starts. The Shop, Codes and AFK buttons are on the left.
 2. **Roles.** One random player becomes the **Chaser**: one for every 8 players, minimum one. Everyone else is a **Runner**.
 3. **Crossings.** Runners line up in a safe zone at one end of a long rectangular field. After "3, 2, 1, RUN!!" they have 40 seconds to reach the safe zone on the far side. The next crossing goes back the other way, and there are 3 crossings in total. Chasers can't enter safe zones, and runners can't be hit inside them.
 4. **Getting caught.** One knife hit downs a runner. A teammate can hold **E** next to them to revive them, which takes 2.5 seconds and leaves the rescuer frozen in place while they hold. A downed runner can also use a Rescue Kit. If nobody saves you within 10 seconds, or you're still on the field when the timer runs out, you become a Chaser. The chaser side snowballs.

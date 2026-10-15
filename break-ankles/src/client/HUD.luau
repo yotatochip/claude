@@ -421,6 +421,26 @@ local function buildVote()
 	UI.new("UISizeConstraint", { MaxSize = Vector2.new(580, 300), Parent = panel })
 	refs.Vote = panel
 	UI.text({ Text = "VOTE FOR THE MAP", TextSize = 24, Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, 8), Parent = panel })
+	UI.button({ Text = "X", TextSize = 18, Size = UDim2.fromOffset(32, 32), Position = UDim2.new(1, -42, 0, 8), Color = C.Bad, Parent = panel }, function()
+		Sounds.Play("Click")
+		HUD.VoteHidden = true
+	end)
+	-- Collapsed form: a small button that reopens the vote.
+	refs.VotePill = UI.button({
+		Name = "VotePill",
+		Text = "VOTE FOR THE MAP",
+		TextSize = 18,
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -90),
+		Size = UDim2.fromOffset(300, 42),
+		Color = C.Blue,
+		Parent = gui,
+	}, function()
+		Sounds.Play("Click")
+		HUD.VoteHidden = false
+		UI.pop(panel, 0.85)
+	end)
+	refs.VotePill.Visible = false
 	local row = UI.new("Frame", {
 		BackgroundTransparency = 1,
 		Position = UDim2.fromOffset(14, 44),
@@ -468,6 +488,12 @@ local function buildVote()
 			task.spawn(function()
 				Shop:InvokeServer("Vote", m.Id)
 			end)
+			-- Get out of the way once you've voted.
+			task.delay(0.6, function()
+				if HUD.MyVote == m.Id then
+					HUD.VoteHidden = true
+				end
+			end)
 		end)
 		refs.VoteButtons[m.Id] = { Button = card, Count = count, Outline = outline }
 	end
@@ -494,6 +520,7 @@ local function buildMapChosen()
 end
 
 HUD.MyVote = nil :: string?
+HUD.VoteHidden = false
 
 ---------------------------------------------------------------------------
 -- Hero or Chicken
@@ -903,8 +930,16 @@ local function refresh()
 
 	-- Vote panel.
 	local voting = phase == "Intermission" and not player:GetAttribute("AFK")
-	refs.Vote.Visible = voting
+	refs.Vote.Visible = voting and not HUD.VoteHidden
+	refs.VotePill.Visible = voting and HUD.VoteHidden
 	if voting then
+		local voted = nil
+		for _, m in Config.Maps do
+			if m.Id == HUD.MyVote then
+				voted = m.Name
+			end
+		end
+		refs.VotePill.Text = if voted then ("VOTED: %s  •  CHANGE"):format(string.upper(voted)) else "VOTE FOR THE MAP"
 		for id, v in refs.VoteButtons do
 			local n = (State:GetAttribute("Vote_" .. id) :: number?) or 0
 			v.Count.Text = ("%d vote%s"):format(n, if n == 1 then "" else "s")
@@ -912,6 +947,7 @@ local function refresh()
 		end
 	elseif phase ~= "Intermission" then
 		HUD.MyVote = nil
+		HUD.VoteHidden = false
 	end
 	local mapId = State:GetAttribute("Map")
 	refs.MapChosen.Visible = phase == "Intro"
